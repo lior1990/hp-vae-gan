@@ -15,7 +15,7 @@ import torch.optim as optim
 from modules import networks_2d
 from modules.losses import kl_criterion
 from modules.utils import calc_gradient_penalty
-from datasets.image import SingleImageDataset
+from datasets.image import SingleImageDataset, MultipleImageDataset
 
 clear = colorama.Style.RESET_ALL
 blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
@@ -362,7 +362,13 @@ if __name__ == '__main__':
     opt.Noise_Amps = []
 
     # Date
-    dataset = SingleImageDataset(opt)
+    if os.path.isdir(opt.image_path):
+        dataset = MultipleImageDataset(opt)
+    elif os.path.isfile(opt.image_path):
+        dataset = SingleImageDataset(opt)
+    else:
+        raise NotImplementedError
+
     data_loader = DataLoader(dataset,
                              shuffle=True,
                              drop_last=True,
@@ -381,7 +387,7 @@ if __name__ == '__main__':
                 logging.info('{}: {}'.format(argument, value))
 
     with logger.LoggingBlock("Experiment Summary", emph=True):
-        video_file_name, checkname, experiment = opt.saver.experiment_dir.split('/')[-3:]
+        video_file_name, checkname, experiment = os.path.normpath(opt.saver.experiment_dir).split(os.path.sep)[-3:]
         logging.info("{}Checkname  :{} {}{}".format(magenta, clear, checkname, clear))
         logging.info("{}Experiment :{} {}{}".format(magenta, clear, experiment, clear))
 
@@ -400,7 +406,7 @@ if __name__ == '__main__':
         checkpoint = torch.load(opt.netG)
         opt.scale_idx = checkpoint['scale']
         opt.resumed_idx = checkpoint['scale']
-        opt.resume_dir = '/'.join(opt.netG.split('/')[:-1])
+        opt.resume_dir = os.sep.join(opt.netG.split(os.sep)[:-1])
         for _ in range(opt.scale_idx):
             netG.init_next_stage()
         netG.load_state_dict(checkpoint['state_dict'])
