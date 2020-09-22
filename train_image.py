@@ -234,7 +234,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae = G_curr(noise_init, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae = G_curr(real, opt.Noise_Amps, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)
