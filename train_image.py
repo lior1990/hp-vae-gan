@@ -177,7 +177,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(noise_init, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _ = G_curr(real, opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
