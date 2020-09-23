@@ -203,14 +203,14 @@ class GeneratorHPVAEGAN(nn.Module):
         self.N = N
 
         self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
-        self.decoder = SPADESequential()
+        self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', SPADEResnetBlock(opt.latent_dim, N, opt.ker_size))
+        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.num_layer):
-            block = SPADEResnetBlock(N, N, opt.ker_size)
+            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
-        self.decoder.add_module('tail', SPADEResnetBlock(N, opt.nc_im, opt.ker_size))
+        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
         # 1x1 Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
@@ -249,7 +249,7 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             z_vae = noise_init
 
-        vae_out = torch.tanh(self.decoder((z_vae, video)))
+        vae_out = torch.tanh(self.decoder(z_vae))
 
         if sample_init is not None:
             x_prev_out = self.refinement_layers(video, sample_init[0], sample_init[1], noise_amp, mode)

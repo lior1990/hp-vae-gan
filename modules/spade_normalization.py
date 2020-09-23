@@ -84,7 +84,7 @@ class SPADE(nn.Module):
             raise NotImplementedError
 
         # The dimension of the intermediate embedding space. Yes, hardcoded.
-        nhidden = 128
+        nhidden = 64
 
         pw = ks // 2
         self.mlp_shared = nn.Sequential(
