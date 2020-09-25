@@ -70,10 +70,10 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
 
 
 class SingleImageDataset(ImageDataset):
-    def __init__(self, opt, transforms=None):
+    def __init__(self, opt, image_path, transforms=None):
         super(SingleImageDataset, self).__init__(opt, transforms=transforms)
 
-        self.image_path = opt.image_path
+        self.image_path = image_path
         if not os.path.exists(opt.image_path):
             logging.error("invalid path")
             exit(0)
