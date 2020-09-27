@@ -139,18 +139,28 @@ def train(opt, data_loader, outer_iteration, noise_amps, generator_optimizer_tup
 
         if opt.visualize:
             # Tensorboard
-            opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, current_iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
-                opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), current_iteration)
-            else:
-                opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), current_iteration)
-            opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, current_iteration)
-            if opt.vae_levels < opt.scale_idx + 1:
-                opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), current_iteration)
-                opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), current_iteration)
-                opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), current_iteration)
-            else:
-                opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), current_iteration)
+
+            if current_iteration % opt.scalar_interval == 0:
+                # update scalars on scalar interval due to low disk space
+                opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp,
+                                       current_iteration)
+                if opt.vae_levels >= opt.scale_idx + 1:
+                    opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(),
+                                           current_iteration)
+                else:
+                    opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(),
+                                           current_iteration)
+                opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp,
+                                       current_iteration)
+                if opt.vae_levels < opt.scale_idx + 1:
+                    opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), current_iteration)
+                    opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(),
+                                           current_iteration)
+                    opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(),
+                                           current_iteration)
+                else:
+                    opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(),
+                                           current_iteration)
 
             if current_iteration % opt.print_interval == 0:
                 if validate:
@@ -280,6 +290,7 @@ def main():
     parser.add_argument('--outer-learning_rate', type=float, default=1e-4)
     parser.add_argument('--validation-interval', type=int, default=50)
     parser.add_argument('--logdir', type=str, default='', help='tensorboard alternative directory')
+    parser.add_argument('--scalar-interval', type=int, default=1000, help='scalar interval update in tensorboard')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
