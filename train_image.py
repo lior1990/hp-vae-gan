@@ -183,11 +183,11 @@ def train(opt, data_loader, outer_iteration, noise_amps, generator_optimizer_tup
                 assert task_index is not None or validate
                 task_index = f"{task_index}" if task_index is not None else "Validation"
 
-                opt.summary.visualize_image(opt, current_iteration, real, f'Real {task_index}')
-                opt.summary.visualize_image(opt, current_iteration, generated, f'Reconstruction GAN {task_index}')
-                opt.summary.visualize_image(opt, current_iteration, generated_vae, f'Reconstruction VAE {task_index}')
-                opt.summary.visualize_image(opt, current_iteration, fake_var, f'Fake GAN {task_index}')
-                opt.summary.visualize_image(opt, current_iteration, fake_vae_var, f'Fake VAE {task_index}')
+                opt.summary.visualize_image(opt, current_iteration, real, f'{task_index}/Real')
+                opt.summary.visualize_image(opt, current_iteration, generated, f'{task_index}/Reconstruction GAN')
+                opt.summary.visualize_image(opt, current_iteration, generated_vae, f'{task_index}/Reconstruction VAE')
+                opt.summary.visualize_image(opt, current_iteration, fake_var, f'{task_index}/Fake GAN')
+                opt.summary.visualize_image(opt, current_iteration, fake_vae_var, f'{task_index}/Fake VAE')
 
 
 def get_G_parameters_list(opt, netG):
