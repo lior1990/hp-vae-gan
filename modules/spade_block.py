@@ -26,8 +26,8 @@ class SPADEResnetBlock(nn.Module):
         fmiddle = min(fin, fout)
 
         # create conv layers
-        self.conv_0 = nn.Conv2d(fin, fmiddle, kernel_size=3, padding=1)
-        self.conv_1 = nn.Conv2d(fmiddle, fout, kernel_size=3, padding=1)
+        self.conv_0 = nn.Conv2d(fin, fmiddle, kernel_size=kernel_size, padding=1)
+        self.conv_1 = nn.Conv2d(fmiddle, fout, kernel_size=kernel_size, padding=1)
         if self.learned_shortcut:
             self.conv_s = nn.Conv2d(fin, fout, kernel_size=1, bias=False)
 
@@ -39,10 +39,10 @@ class SPADEResnetBlock(nn.Module):
                 self.conv_s = spectral_norm(self.conv_s)
 
         # define normalization layers
-        self.norm_0 = SPADE(NormLayer.BATCH, kernel_size, fin, img_nc)
-        self.norm_1 = SPADE(NormLayer.BATCH, kernel_size, fmiddle, img_nc)
+        self.norm_0 = SPADE(NormLayer.INSTANCE, kernel_size, fin, img_nc)
+        self.norm_1 = SPADE(NormLayer.INSTANCE, kernel_size, fmiddle, img_nc)
         if self.learned_shortcut:
-            self.norm_s = SPADE(NormLayer.BATCH, kernel_size, fin, img_nc)
+            self.norm_s = SPADE(NormLayer.INSTANCE, kernel_size, fin, img_nc)
 
     # note the resnet block with SPADE also takes in |seg|,
     # the semantic segmentation map as input

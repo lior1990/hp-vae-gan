@@ -62,6 +62,23 @@ class ConvBlock2D(nn.Sequential):
             self.add_module(act, get_activation(act))
 
 
+class ConvBlock2DIN(nn.Sequential):
+    """
+    Conv Block 2D Instance Normalization
+    """
+    def __init__(self, in_channel, out_channel, ker_size, padding, stride, norm=True, act='lrelu'):
+        super(ConvBlock2DIN, self).__init__()
+        if norm:
+            self.add_module('conv', nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
+                                                                     stride=stride, padding=padding)))
+        else:
+            self.add_module('conv',
+                            nn.Conv2d(in_channel, out_channel, kernel_size=ker_size, stride=stride, padding=padding,
+                                      padding_mode='reflect'))
+        if act is not None:
+            self.add_module(act, get_activation(act))
+
+
 class ConvBlock2DSN(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size, padding, stride, bn=True, act='lrelu'):
         super(ConvBlock2DSN, self).__init__()
@@ -79,16 +96,16 @@ class ConvBlock2DSN(nn.Sequential):
 class FeatureExtractor(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size, padding, stride, num_blocks=2, return_linear=False):
         super(FeatureExtractor, self).__init__()
-        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride)),
+        self.add_module('conv_block_0', ConvBlock2DIN(in_channel, out_channel, ker_size, padding, stride)),
         for i in range(num_blocks - 1):
             self.add_module('conv_block_{}'.format(i + 1),
-                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
+                            ConvBlock2DIN(out_channel, out_channel, ker_size, padding, stride))
         if return_linear:
             self.add_module('conv_block_{}'.format(num_blocks),
-                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride, bn=False, act=None))
+                            ConvBlock2DIN(out_channel, out_channel, ker_size, padding, stride, norm=False, act=None))
         else:
             self.add_module('conv_block_{}'.format(num_blocks),
-                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
+                            ConvBlock2DIN(out_channel, out_channel, ker_size, padding, stride))
 
 
 class Encode2DVAE(nn.Module):
@@ -212,23 +229,16 @@ class GeneratorHPVAEGAN(nn.Module):
             self.decoder.add_module('block%d' % (i), block)
         self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
-        # 1x1 Decoder
-        # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
-        # for i in range(opt.num_layer):
-        #     block = ConvBlock2D(N, N, 1, 0, stride=1)
-        #     self.decoder.add_module('block%d' % (i), block)
-        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, 1, 1, 0))
-
         self.body = torch.nn.ModuleList([])
 
     def init_next_stage(self):
         def create_spade_seq():
             _stage = SPADESequential()
-            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size))
+            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, use_spectral_norm=False))
             for i in range(self.opt.num_layer):
-                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size)
+                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, use_spectral_norm=False)
                 _stage.add_module('block%d' % (i), block)
-            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size))
+            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, use_spectral_norm=False))
             return _stage
 
         if len(self.body) == 0:
