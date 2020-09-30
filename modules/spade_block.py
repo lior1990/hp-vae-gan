@@ -19,7 +19,7 @@ from modules.spade_normalization import SPADE, NormLayer
 # class-conditional GAN architecture using residual block.
 # The code was inspired from https://github.com/LMescheder/GAN_stability.
 class SPADEResnetBlock(nn.Module):
-    def __init__(self, fin, fout, kernel_size, use_spectral_norm=True, img_nc=3):
+    def __init__(self, fin, fout, kernel_size, norm_layer: "NormLayer", use_spectral_norm=True, img_nc=3):
         super().__init__()
         # Attributes
         self.learned_shortcut = (fin != fout)
@@ -39,10 +39,10 @@ class SPADEResnetBlock(nn.Module):
                 self.conv_s = spectral_norm(self.conv_s)
 
         # define normalization layers
-        self.norm_0 = SPADE(NormLayer.INSTANCE, kernel_size, fin, img_nc)
-        self.norm_1 = SPADE(NormLayer.INSTANCE, kernel_size, fmiddle, img_nc)
+        self.norm_0 = SPADE(norm_layer, kernel_size, fin, img_nc)
+        self.norm_1 = SPADE(norm_layer, kernel_size, fmiddle, img_nc)
         if self.learned_shortcut:
-            self.norm_s = SPADE(NormLayer.INSTANCE, kernel_size, fin, img_nc)
+            self.norm_s = SPADE(norm_layer, kernel_size, fin, img_nc)
 
     # note the resnet block with SPADE also takes in |seg|,
     # the semantic segmentation map as input

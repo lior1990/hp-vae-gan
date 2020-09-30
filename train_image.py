@@ -1,5 +1,7 @@
 import matplotlib
 
+from modules.spade_normalization import NormLayer
+
 matplotlib.use("Agg")
 
 import argparse
@@ -321,11 +323,17 @@ if __name__ == '__main__':
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
 
+    # spade
+    parser.add_argument('--norm-layer', type=int, default=NormLayer.INSTANCE.value,
+                        help=f"spade block norm layer. "
+                             f"{NormLayer.INSTANCE.value} for instance, {NormLayer.BATCH.value} for batch")
+
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
 
     assert opt.vae_levels > 0
     assert opt.disc_loss_weight > 0
+    opt.norm_layer = NormLayer(opt.norm_layer)
 
     if opt.data_rep < opt.batch_size:
         opt.data_rep = opt.batch_size

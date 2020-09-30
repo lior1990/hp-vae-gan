@@ -74,11 +74,11 @@ class SPADE(nn.Module):
 
         ks = kernel_size
 
-        if norm_layer == norm_layer.INSTANCE:
+        if norm_layer == NormLayer.INSTANCE:
             self.param_free_norm = nn.InstanceNorm2d(norm_nc, affine=False)
         # elif param_free_norm_type == 'syncbatch':
         #     self.param_free_norm = SynchronizedBatchNorm2d(norm_nc, affine=False)
-        elif norm_layer == norm_layer.BATCH:
+        elif norm_layer == NormLayer.BATCH:
             self.param_free_norm = nn.BatchNorm2d(norm_nc, affine=False)
         else:
             raise NotImplementedError
