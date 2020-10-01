@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 
 from modules import networks_2d
-from modules.losses import kl_criterion
+from modules.losses import kl_criterion, VGGLoss
 from modules.utils import calc_gradient_penalty
 from datasets.image import SingleImageDataset, MultipleImageDataset
 
@@ -111,6 +111,7 @@ def train(opt, netG):
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
     iterator = iter(data_loader)
+    criterionVGG = VGGLoss(not opt.no_cuda)
 
     for iteration in epoch_iterator:
         try:
@@ -161,8 +162,10 @@ def train(opt, netG):
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
+            vgg_vae_loss = criterionVGG(generated, real) + criterionVGG(generated_vae, real_zero)
+
             kl_loss = kl_criterion(mu, logvar)
-            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss
+            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss + opt.vgg_weight * vgg_vae_loss
 
             total_loss += vae_loss
         else:
@@ -195,7 +198,9 @@ def train(opt, netG):
             ###########################
             errG_total = 0
             rec_loss = opt.rec_loss(generated, real)
-            errG_total += opt.rec_weight * rec_loss
+            vgg_loss = criterionVGG(generated, real)
+
+            errG_total += opt.rec_weight * rec_loss + opt.vgg_weight * vgg_loss
 
             # Train with 3D Discriminator
             output = D_curr(fake)
@@ -301,6 +306,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda-grad', type=float, default=0.1, help='gradient penelty weight')
     parser.add_argument('--rec-weight', type=float, default=10., help='reconstruction loss weight')
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
+    parser.add_argument('--vgg-weight', type=float, default=1., help='VGG loss weight')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
