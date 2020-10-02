@@ -333,6 +333,7 @@ if __name__ == '__main__':
     parser.add_argument('--norm-layer', type=int, default=NormLayer.INSTANCE.value,
                         help=f"spade block norm layer. "
                              f"{NormLayer.INSTANCE.value} for instance, {NormLayer.BATCH.value} for batch")
+    parser.add_argument('--spectral-norm', action='store_true', default=False, help='Use spectral norm in SPADE block')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()

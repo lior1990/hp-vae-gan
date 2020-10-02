@@ -234,11 +234,11 @@ class GeneratorHPVAEGAN(nn.Module):
     def init_next_stage(self):
         def create_spade_seq():
             _stage = SPADESequential()
-            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=False))
+            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm))
             for i in range(self.opt.num_layer):
-                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=False)
+                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm)
                 _stage.add_module('block%d' % (i), block)
-            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=False))
+            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm))
             return _stage
 
         if len(self.body) == 0:
