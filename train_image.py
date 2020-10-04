@@ -162,7 +162,10 @@ def train(opt, netG):
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            vgg_vae_loss = criterionVGG(generated, real) + criterionVGG(generated_vae, real_zero)
+            vgg_vae_loss = 0
+
+            if opt.vgg_weight:
+                vgg_vae_loss = criterionVGG(generated, real) + criterionVGG(generated_vae, real_zero)
 
             kl_loss = kl_criterion(mu, logvar)
             vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss + opt.vgg_weight * vgg_vae_loss
@@ -198,7 +201,10 @@ def train(opt, netG):
             ###########################
             errG_total = 0
             rec_loss = opt.rec_loss(generated, real)
-            vgg_loss = criterionVGG(generated, real)
+
+            vgg_loss = 0
+            if opt.vgg_weight:
+                vgg_loss = criterionVGG(generated, real)
 
             errG_total += opt.rec_weight * rec_loss + opt.vgg_weight * vgg_loss
 
