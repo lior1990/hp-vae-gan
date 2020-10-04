@@ -467,7 +467,7 @@ def main():
                 outer_iteration + 1, opt.outer_iterations,
             ))
 
-            if outer_iteration and outer_iteration % opt.validation_interval == 0:
+            if outer_iteration and opt.validation_interval and outer_iteration % opt.validation_interval == 0:
                 if opt.vae_levels < opt.scale_idx + 1:
                     validate(G_curr_meta, datasets, generator_optimizer_tuple, netG, noise_amps_list,
                              number_of_tasks, opt, outer_iteration, D_curr, D_curr_meta, discriminator_optimizer_tuple)
