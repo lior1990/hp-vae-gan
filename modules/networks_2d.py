@@ -280,11 +280,11 @@ class GeneratorHPVAEGAN(nn.Module):
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
-            if mode == 'rand':
-                noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], source_img))
-            else:
-                x_prev = block((x_prev_out_up, source_img))
+            # if mode == 'rand':
+            noise = utils.generate_noise(ref=x_prev_out_up)
+            x_prev = block((noise * noise_amp[idx + 1], x_prev_out_up))
+            # else:
+            #     x_prev = block((source_img, x_prev_out_up))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
