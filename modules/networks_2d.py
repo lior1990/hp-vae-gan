@@ -3,7 +3,15 @@ import torch
 import torch.nn as nn
 import numpy as np
 import copy
+import torch.nn.functional as F
+import torchvision
+
 import utils
+
+VGG = torchvision.models.vgg19(pretrained=True).features
+VGG_CACHE = {}
+for param in VGG.parameters():
+    param.requires_grad = False
 
 
 def conv_weights_init_ones(m):
@@ -212,6 +220,9 @@ class GeneratorHPVAEGAN(nn.Module):
 
         self.body = torch.nn.ModuleList([])
 
+        global VGG
+        VGG = VGG.to(opt.device)
+
     def init_next_stage(self):
         if len(self.body) == 0:
             _first_stage = nn.Sequential()
@@ -227,12 +238,12 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
         if noise_init is None:
-            mu, logvar = self.encode(video)
+            mu, logvar = self.encode(real_zero)
             z_vae = reparameterize(mu, logvar, self.training)
         else:
             z_vae = noise_init
@@ -240,22 +251,43 @@ class GeneratorHPVAEGAN(nn.Module):
         vae_out = torch.tanh(self.decoder(z_vae))
 
         if sample_init is not None:
-            x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
+            x_prev_out, features_loss = self.refinement_layers(real_zero, sample_init[0], sample_init[1], noise_amp, mode)
         else:
-            x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
+            x_prev_out, features_loss = self.refinement_layers(real_zero, 0, vae_out, noise_amp, mode)
 
         if noise_init is None:
-            return x_prev_out, vae_out, (mu, logvar)
+            return x_prev_out, vae_out, features_loss, (mu, logvar)
         else:
-            return x_prev_out, vae_out
+            return x_prev_out, vae_out, features_loss
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
+    def refinement_layers(self, real, start_idx, x_prev_out, noise_amp, mode):
+        global VGG_CACHE
+
+        features_loss = []
+
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
                 x_prev_out.detach_()
 
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+
+            try:
+                real_hash = real.__hash__()
+                if real_hash in VGG_CACHE:
+                    real_features = VGG_CACHE[real_hash]
+                else:
+                    real_up = utils.upscale_2d(real, idx + 1, self.opt)
+                    real_features = VGG(real_up).flatten(start_dim=1)
+                    real_features = F.normalize(real_features, p=2, dim=1)
+                    VGG_CACHE[real_hash] = real_features
+
+                x_prev_features = VGG(x_prev_out_up).flatten(start_dim=1)
+                x_prev_features = F.normalize(x_prev_features, p=2, dim=1)
+
+                features_loss.append(torch.norm(real_features - x_prev_features, p=1, dim=1))
+            except RuntimeError:
+                pass
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
@@ -266,7 +298,10 @@ class GeneratorHPVAEGAN(nn.Module):
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
-        return x_prev_out
+        if features_loss:
+            return x_prev_out, torch.stack(features_loss).sum()
+        else:
+            return x_prev_out, torch.zeros(1).to(self.opt.device)
 
 
 class GeneratorVAE_nb(nn.Module):
