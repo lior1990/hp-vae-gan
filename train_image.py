@@ -172,7 +172,8 @@ def train(opt, netG):
 
             # Train 3D Discriminator
             D_curr.zero_grad()
-            output = D_curr(real)
+            d_real_input = torch.cat([real, real], dim=1)
+            output = D_curr(d_real_input)
             errD_real = -output.mean()
 
             # train with fake
@@ -180,10 +181,11 @@ def train(opt, netG):
             fake, _ = G_curr(noise_init, opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
             # Train 3D Discriminator
-            output = D_curr(fake.detach())
+            d_fake_input = torch.cat([fake.detach(), real], dim=1)
+            output = D_curr(d_fake_input)
             errD_fake = output.mean()
 
-            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device)
+            gradient_penalty = calc_gradient_penalty(D_curr, d_real_input, d_fake_input, opt.lambda_grad, opt.device)
             errD_total = errD_real + errD_fake + gradient_penalty
             errD_total.backward()
             optimizerD.step()
@@ -196,7 +198,7 @@ def train(opt, netG):
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
-            output = D_curr(fake)
+            output = D_curr(torch.cat([fake, real], dim=1))
             errG = -output.mean() * opt.disc_loss_weight
             errG_total += errG
 
