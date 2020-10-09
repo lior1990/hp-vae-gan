@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import copy
 import utils
+from modules.self_attention import SelfAttention
 
 
 def conv_weights_init_ones(m):
@@ -176,6 +177,8 @@ class WDiscriminator2D(nn.Module):
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
             self.body.add_module('block%d' % (i), block)
+        self.body.add_module('feature_reduction', nn.Conv2d(N, N, kernel_size=2*opt.ker_size, padding=1, stride=2))
+        self.body.add_module('self_attention', SelfAttention(N))
         self.tail = nn.Conv2d(N, 1, kernel_size=opt.ker_size, padding=1, stride=1)
 
     def forward(self, x):
