@@ -380,7 +380,7 @@ if __name__ == '__main__':
                              shuffle=True,
                              drop_last=True,
                              batch_size=opt.batch_size,
-                             num_workers=4)
+                             num_workers=0)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale

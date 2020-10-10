@@ -219,7 +219,7 @@ class GeneratorHPVAEGAN(nn.Module):
         # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, 1, 1, 0))
 
         self.body = torch.nn.ModuleList([])
-
+        self.max_pool_2d = nn.MaxPool2d(opt.ker_size, stride=1, padding=1)
         global VGG
         VGG = VGG.to(opt.device)
 
@@ -260,6 +260,15 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             return x_prev_out, vae_out, features_loss
 
+    def _calc_vgg_features(self, tensor, scale_idx):
+        features = VGG(tensor)
+        for i in range(scale_idx):
+            features = self.max_pool_2d(features)
+
+        features = features.flatten(start_dim=1)
+        features = F.normalize(features, p=2, dim=1)
+        return features
+
     def refinement_layers(self, real, start_idx, x_prev_out, noise_amp, mode):
         global VGG_CACHE
 
@@ -278,12 +287,10 @@ class GeneratorHPVAEGAN(nn.Module):
                     real_features = VGG_CACHE[real_hash]
                 else:
                     real_up = utils.upscale_2d(real, idx + 1, self.opt)
-                    real_features = VGG(real_up).flatten(start_dim=1)
-                    real_features = F.normalize(real_features, p=2, dim=1)
+                    real_features = self._calc_vgg_features(real_up, idx)
                     VGG_CACHE[real_hash] = real_features
 
-                x_prev_features = VGG(x_prev_out_up).flatten(start_dim=1)
-                x_prev_features = F.normalize(x_prev_features, p=2, dim=1)
+                x_prev_features = self._calc_vgg_features(x_prev_out_up, idx)
 
                 features_loss.append(torch.norm(real_features - x_prev_features, p=1, dim=1))
             except RuntimeError:
