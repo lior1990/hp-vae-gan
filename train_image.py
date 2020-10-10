@@ -118,12 +118,19 @@ def train(opt, netG):
             data = next(iterator)
 
         if opt.scale_idx > 0:
-            real, real_zero = data
+            real, real_zero, real_class = data
             real = real.to(opt.device)
             real_zero = real_zero.to(opt.device)
+
         else:
-            real = data.to(opt.device)
+            real, real_class = data
+            real = real.to(opt.device)
             real_zero = real
+
+        real_class = real_class.type(torch.FloatTensor).to(opt.device)
+        assert opt.batch_size == 1
+        real_class_tensor = torch.ones_like(real, device=opt.device) * real_class
+        real_zero_class_tensor = torch.ones_like(real_zero, device=opt.device) * real_class
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
         initial_size = [int(initial_size * opt.ar), initial_size]
@@ -144,7 +151,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction, _, _ = G_curr((real_zero, real_zero_class_tensor), opt.Noise_Amps, mode="rec")
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -155,7 +162,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, (mu, logvar) = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, (mu, logvar) = G_curr((real_zero, real_zero_class_tensor), opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
@@ -172,16 +179,16 @@ def train(opt, netG):
 
             # Train 3D Discriminator
             D_curr.zero_grad()
-            d_real_input = torch.cat([real, real], dim=1)
+            d_real_input = torch.cat([real, real_class_tensor], dim=1)
             output = D_curr(d_real_input)
             errD_real = -output.mean()
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _ = G_curr((real_zero, real_zero_class_tensor), opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
             # Train 3D Discriminator
-            d_fake_input = torch.cat([fake.detach(), real], dim=1)
+            d_fake_input = torch.cat([fake.detach(), real_class_tensor], dim=1)
             output = D_curr(d_fake_input)
             errD_fake = output.mean()
 
@@ -236,7 +243,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae = G_curr((real_zero, real_zero_class_tensor), opt.Noise_Amps, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)

@@ -227,7 +227,8 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, real_zero_tup, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+        real_zero, real_zero_class_tensor = real_zero_tup
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
@@ -237,7 +238,7 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             z_vae = noise_init
 
-        z_vae_conditioned = torch.cat([z_vae, real_zero], dim=1)
+        z_vae_conditioned = torch.cat([z_vae, real_zero_class_tensor], dim=1)
         vae_out = torch.tanh(self.decoder(z_vae_conditioned))
 
         if sample_init is not None:

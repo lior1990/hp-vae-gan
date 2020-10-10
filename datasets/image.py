@@ -45,7 +45,8 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         return img
 
     def __getitem__(self, idx):
-        image_full_scale = self._get_image(idx)
+        image_full_scale, img_class = self._get_image(idx)
+        img_class /= 10
 
         # Horizontal flip (Until Kornia will handle videos
         hflip = random.random() < 0.5 if self.opt.hflip else False
@@ -56,9 +57,9 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         if self.opt.scale_idx > 0:
             images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
 
-            return [images_transformed, images_zero_scale_transformed]
+            return [images_transformed, images_zero_scale_transformed, img_class]
 
-        return images_transformed
+        return images_transformed, img_class
 
     @abstractmethod
     def _get_image(self, idx):
@@ -88,7 +89,7 @@ class SingleImageDataset(ImageDataset):
         return self.opt.data_rep
 
     def _get_image(self, idx):
-        return self.image_full_scale
+        return self.image_full_scale, 1
 
 
 class MultipleImageDataset(ImageDataset):
@@ -117,4 +118,5 @@ class MultipleImageDataset(ImageDataset):
         return self.opt.data_rep * self.num_of_images
 
     def _get_image(self, idx):
-        return self.images[idx % self.num_of_images]
+        img_idx = idx % self.num_of_images
+        return self.images[img_idx], img_idx + 1  # create "class" for each image, starting from 1
