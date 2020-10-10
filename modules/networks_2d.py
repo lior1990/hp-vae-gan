@@ -100,7 +100,7 @@ class Encode2DVAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(2*opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
@@ -233,7 +233,8 @@ class GeneratorHPVAEGAN(nn.Module):
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
         if noise_init is None:
-            mu, logvar = self.encode(real_zero)
+            real_zero_with_class = torch.cat([real_zero, real_zero_class_tensor], dim=1)
+            mu, logvar = self.encode(real_zero_with_class)
             z_vae = reparameterize(mu, logvar, self.training)
         else:
             z_vae = noise_init
