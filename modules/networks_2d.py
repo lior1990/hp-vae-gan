@@ -197,7 +197,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim + opt.nc_im, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.num_layer):
             block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
@@ -227,17 +227,18 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
         if noise_init is None:
-            mu, logvar = self.encode(video)
+            mu, logvar = self.encode(real_zero)
             z_vae = reparameterize(mu, logvar, self.training)
         else:
             z_vae = noise_init
 
-        vae_out = torch.tanh(self.decoder(z_vae))
+        z_vae_conditioned = torch.cat([z_vae, real_zero], dim=1)
+        vae_out = torch.tanh(self.decoder(z_vae_conditioned))
 
         if sample_init is not None:
             x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
