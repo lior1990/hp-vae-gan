@@ -281,7 +281,7 @@ class GeneratorHPVAEGAN(nn.Module):
     def refinement_layers(self, real, start_idx, x_prev_out, noise_amp, mode):
         global VGG_CACHE
 
-        features_loss = torch.tensor(0, dtype=torch.float32)
+        features_loss = torch.tensor(0, dtype=torch.float32, device=self.opt.device)
 
         real_hash = real.__hash__()
 
