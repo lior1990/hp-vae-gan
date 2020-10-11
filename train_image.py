@@ -160,9 +160,9 @@ def train(opt, netG):
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
             kl_loss = kl_criterion(mu, logvar)
-            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss
+            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss + features_loss * opt.features_loss_weight
 
-            total_loss += vae_loss + features_loss
+            total_loss += vae_loss
         else:
             ############################
             # (2) Update D network: maximize D(x) + D(G(z))
@@ -200,7 +200,7 @@ def train(opt, netG):
             errG = -output.mean() * opt.disc_loss_weight
             errG_total += errG
 
-            errG_total += features_loss
+            errG_total += features_loss * opt.features_loss_weight
 
             total_loss += errG_total
 
@@ -303,6 +303,7 @@ if __name__ == '__main__':
     parser.add_argument('--rec-weight', type=float, default=10., help='reconstruction loss weight')
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
+    parser.add_argument('--features-loss-weight', type=float, default=1.0, help='VGG features loss weight')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
