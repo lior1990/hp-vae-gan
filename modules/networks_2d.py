@@ -239,6 +239,9 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
+            global VGG_CACHE
+            VGG_CACHE.clear()  # reduce memory consumption between scales
+
     def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
