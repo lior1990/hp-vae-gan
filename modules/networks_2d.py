@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torchvision
 
 import utils
+from modules.spade_block import SPADEResnetBlock
 
 VGG = torchvision.models.vgg19(pretrained=True).features
 VGG_CACHE = {}
@@ -193,6 +194,14 @@ class WDiscriminator2D(nn.Module):
         return out
 
 
+class SPADESequential(nn.Sequential):
+    def forward(self, tup):
+        x, source_img = tup
+        for module in self:
+            x = module((x, source_img))
+        return x
+
+
 class GeneratorHPVAEGAN(nn.Module):
     def __init__(self, opt):
         super(GeneratorHPVAEGAN, self).__init__()
@@ -211,13 +220,6 @@ class GeneratorHPVAEGAN(nn.Module):
             self.decoder.add_module('block%d' % (i), block)
         self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
-        # 1x1 Decoder
-        # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
-        # for i in range(opt.num_layer):
-        #     block = ConvBlock2D(N, N, 1, 0, stride=1)
-        #     self.decoder.add_module('block%d' % (i), block)
-        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, 1, 1, 0))
-
         self.body = torch.nn.ModuleList([])
         self.max_pool_2d = nn.MaxPool2d(opt.ker_size, stride=1, padding=1)
         self.l1_loss = nn.L1Loss()
@@ -225,19 +227,22 @@ class GeneratorHPVAEGAN(nn.Module):
         VGG = VGG.to(opt.device)
 
     def init_next_stage(self):
-        if len(self.body) == 0:
-            _first_stage = nn.Sequential()
-            _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
-                                                stride=1))
+        def create_spade_seq():
+            _stage = SPADESequential()
+            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm))
             for i in range(self.opt.num_layer):
-                block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
-                _first_stage.add_module('block%d' % (i), block)
-            _first_stage.add_module('tail',
-                                    nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
-            self.body.append(_first_stage)
+                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm)
+                _stage.add_module('block%d' % (i), block)
+            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm))
+            return _stage
+
+        if len(self.body) == 0:
+            first_stage = create_spade_seq()
+            self.body.append(first_stage)
         else:
-            self.body.append(copy.deepcopy(self.body[-1]))
+            new_stage = create_spade_seq()
+            new_stage.load_state_dict(copy.deepcopy(self.body[-1].state_dict()))
+            self.body.append(new_stage)
 
             global VGG_CACHE
             VGG_CACHE.clear()  # reduce memory consumption between scales
@@ -281,12 +286,12 @@ class GeneratorHPVAEGAN(nn.Module):
         features = F.normalize(features, p=2, dim=1)
         return features
 
-    def refinement_layers(self, real, start_idx, x_prev_out, noise_amp, mode):
+    def refinement_layers(self, real_zero, start_idx, x_prev_out, noise_amp, mode):
         global VGG_CACHE
 
         features_loss = torch.tensor(0, dtype=torch.float32, device=self.opt.device)
 
-        real_hash = real.__hash__()
+        real_hash = real_zero.__hash__()
 
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
@@ -294,7 +299,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
-            real_up = utils.upscale_2d(real, idx + 1, self.opt)
+            real_up = utils.upscale_2d(real_zero, idx + 1, self.opt)
 
             real_cache_key = (idx, real_hash)
 
@@ -311,9 +316,9 @@ class GeneratorHPVAEGAN(nn.Module):
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
+                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], real_zero))
             else:
-                x_prev = block(x_prev_out_up)
+                x_prev = block((x_prev_out_up, real_zero))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
