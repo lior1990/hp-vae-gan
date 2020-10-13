@@ -313,14 +313,10 @@ class GeneratorHPVAEGAN(nn.Module):
 
             features_loss += (self.l1_loss(x_prev_features, real_features))
 
-            # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
-            if mode == 'rand':
-                noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], real_zero))
-            else:
-                x_prev = block((x_prev_out_up, real_zero))
+            noise = utils.generate_noise(ref=x_prev_out_up)
+            x_prev = block((noise * noise_amp[idx + 1], x_prev_out_up))
 
-            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+            x_prev_out = torch.tanh(x_prev)
 
         return x_prev_out, features_loss
 
