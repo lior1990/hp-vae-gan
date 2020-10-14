@@ -8,6 +8,7 @@ import torchvision
 
 import utils
 from modules.spade_block import SPADEResnetBlock
+from modules.spade_normalization import SPADE, NormLayer
 
 VGG = torchvision.models.vgg19(pretrained=True).features
 VGG_CACHE = {}
@@ -68,6 +69,30 @@ class ConvBlock2D(nn.Sequential):
             self.add_module('norm', nn.BatchNorm2d(out_channel))
         if act is not None:
             self.add_module(act, get_activation(act))
+
+
+class SPADEBlock2D(nn.Sequential):
+    def __init__(self, in_channel, out_channel, ker_size, padding, stride, norm_layer: NormLayer, act='lrelu'):
+        super(SPADEBlock2D, self).__init__()
+        self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
+                                          stride=stride, padding=padding))
+        self.add_module('norm', SPADE(norm_layer, ker_size, out_channel, 3))
+        self.add_module(act, get_activation(act))
+
+    def forward(self, tup):
+        x, source_img = tup
+        modules = iter(self)
+
+        conv = modules.__next__()
+        x = conv(x)
+
+        norm = modules.__next__()
+        x = norm((x, source_img))
+
+        actv = modules.__next__()
+        x = actv(x)
+
+        return x
 
 
 class ConvBlock2DSN(nn.Sequential):
@@ -229,11 +254,11 @@ class GeneratorHPVAEGAN(nn.Module):
     def init_next_stage(self):
         def create_spade_seq():
             _stage = SPADESequential()
-            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm))
+            _stage.add_module('head', SPADEBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, 1, 1, self.opt.norm_layer))
             for i in range(self.opt.num_layer):
-                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm)
+                block = SPADEBlock2D(self.N, self.N, self.opt.ker_size, 1, 1, self.opt.norm_layer)
                 _stage.add_module('block%d' % (i), block)
-            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, self.opt.norm_layer, use_spectral_norm=self.opt.spectral_norm))
+            _stage.add_module('tail', SPADEBlock2D(self.N, self.opt.nc_im, self.opt.ker_size, 1, 1, self.opt.norm_layer))
             return _stage
 
         if len(self.body) == 0:
