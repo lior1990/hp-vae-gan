@@ -22,7 +22,7 @@ class SPADEResnetBlock(nn.Module):
     def __init__(self, fin, fout, kernel_size, norm_layer: "NormLayer", use_spectral_norm=True, img_nc=3):
         super().__init__()
         # Attributes
-        self.learned_shortcut = (fin != fout)
+        self.learned_shortcut = True  # (fin != fout)
         fmiddle = min(fin, fout)
 
         # create conv layers
