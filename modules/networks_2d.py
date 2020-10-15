@@ -272,17 +272,37 @@ class GeneratorHPVAEGAN(nn.Module):
             global VGG_CACHE
             VGG_CACHE.clear()  # reduce memory consumption between scales
 
+    @staticmethod
+    def _calc_mean_std(feat, eps=1e-5):
+        # eps is a small value added to the variance to avoid divide-by-zero.
+        size = feat.size()
+        assert (len(size) == 4)
+        N, C = size[:2]
+        feat_var = feat.view(N, C, -1).var(dim=2) + eps
+        feat_std = feat_var.sqrt().view(N, C, 1, 1)
+        feat_mean = feat.view(N, C, -1).mean(dim=2).view(N, C, 1, 1)
+        return feat_mean, feat_std
+
     def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
+        size = real_zero.size()
+        real_mean, real_std = self._calc_mean_std(real_zero)
+        real_mean = real_mean.expand(size)
+        real_std = real_std.expand(size)
+
+        normalized_real_zero = (real_zero - real_mean) / real_std
+
         if noise_init is None:
-            mu, logvar = self.encode(real_zero)
+            mu, logvar = self.encode(normalized_real_zero)
             z_vae = reparameterize(mu, logvar, self.training)
         else:
             z_vae = noise_init
 
-        vae_out = torch.tanh(self.decoder(z_vae))
+        z_vae = self.decoder(z_vae)
+        un_normalized_z_vae = z_vae * real_std + real_mean
+        vae_out = torch.tanh(un_normalized_z_vae)
 
         vae_out_features = VGG(utils.upscale_2d(vae_out, 2, self.opt))
         real_zero_features = VGG(utils.upscale_2d(real_zero, 2, self.opt))
