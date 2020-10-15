@@ -261,12 +261,22 @@ class GeneratorHPVAEGAN(nn.Module):
             _stage.add_module('tail', SPADEBlock2D(self.N, self.opt.nc_im, self.opt.ker_size, 1, 1, self.opt.norm_layer))
             return _stage
 
+        def create_conv_seq():
+            _stage = nn.Sequential()
+            _stage.add_module('head', ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size, stride=1))
+            for i in range(self.opt.num_layer):
+                block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
+                _stage.add_module('block%d' % (i), block)
+            _stage.add_module('tail', nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
+            return _stage
+
         if len(self.body) == 0:
             first_stage = create_spade_seq()
             self.body.append(first_stage)
         else:
-            new_stage = create_spade_seq()
-            new_stage.load_state_dict(copy.deepcopy(self.body[-1].state_dict()))
+            new_stage = create_conv_seq()
+            if type(self.body[-1]) != SPADESequential:
+                new_stage.load_state_dict(copy.deepcopy(self.body[-1].state_dict()))
             self.body.append(new_stage)
 
             global VGG_CACHE
@@ -359,9 +369,12 @@ class GeneratorHPVAEGAN(nn.Module):
             features_loss += (self.l1_loss(x_prev_features, real_features))
 
             noise = utils.generate_noise(ref=x_prev_out_up)
-            x_prev = block((noise * noise_amp[idx + 1], x_prev_out_up))
-
-            x_prev_out = torch.tanh(x_prev)
+            if idx > 0:
+                x_prev = block(noise * noise_amp[idx + 1] + x_prev_out_up)
+            else:
+                x_prev = block((noise * noise_amp[idx + 1], real_zero))
+            
+            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
         return x_prev_out, features_loss
 
