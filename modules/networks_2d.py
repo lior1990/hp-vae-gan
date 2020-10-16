@@ -270,17 +270,24 @@ class GeneratorHPVAEGAN(nn.Module):
             _stage.add_module('tail', nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
             return _stage
 
-        if len(self.body) == 0:
-            first_stage = create_spade_seq()
-            self.body.append(first_stage)
+        if self.opt.scale_idx - self.opt.vae_levels > (self.opt.stop_scale + 1) // 2:
+            new_stage = create_spade_seq()
         else:
             new_stage = create_conv_seq()
-            if type(self.body[-1]) != SPADESequential:
-                new_stage.load_state_dict(copy.deepcopy(self.body[-1].state_dict()))
-            self.body.append(new_stage)
 
-            global VGG_CACHE
-            VGG_CACHE.clear()  # reduce memory consumption between scales
+        if len(self.body) > 0:
+            if type(self.body[-1]) == type(new_stage):
+                new_stage.load_state_dict(copy.deepcopy(self.body[-1].state_dict()))
+            else:
+                new_stage_state_dict = new_stage.state_dict()
+                pretrained_state_dict = {k: v for k, v in copy.deepcopy(self.body[-1].state_dict()).items() if k in new_stage_state_dict}
+                new_stage_state_dict.update(pretrained_state_dict)
+                new_stage.load_state_dict(new_stage_state_dict)
+
+        self.body.append(new_stage)
+
+        global VGG_CACHE
+        VGG_CACHE.clear()  # reduce memory consumption between scales
 
     @staticmethod
     def _calc_mean_std(feat, eps=1e-5):
@@ -348,6 +355,8 @@ class GeneratorHPVAEGAN(nn.Module):
 
         real_hash = real_zero.__hash__()
 
+        spade_idx = (self.opt.stop_scale + 1) // 2
+
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
                 x_prev_out.detach_()
@@ -369,12 +378,13 @@ class GeneratorHPVAEGAN(nn.Module):
             features_loss += (self.l1_loss(x_prev_features, real_features))
 
             noise = utils.generate_noise(ref=x_prev_out_up)
-            if idx > 0:
-                x_prev = block(noise * noise_amp[idx + 1] + x_prev_out_up)
-                x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+
+            if idx > spade_idx:
+                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], real_zero))
             else:
-                x_prev = block((noise * noise_amp[idx + 1], x_prev_out_up))
-                x_prev_out = torch.tanh(x_prev)
+                x_prev = block(noise * noise_amp[idx + 1] + x_prev_out_up)
+
+            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
         return x_prev_out, features_loss
 
