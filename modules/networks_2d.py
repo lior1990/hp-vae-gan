@@ -371,10 +371,10 @@ class GeneratorHPVAEGAN(nn.Module):
             noise = utils.generate_noise(ref=x_prev_out_up)
             if idx > 0:
                 x_prev = block(noise * noise_amp[idx + 1] + x_prev_out_up)
+                x_prev_out = torch.tanh(x_prev + x_prev_out_up)
             else:
-                x_prev = block((noise * noise_amp[idx + 1], real_zero))
-            
-            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+                x_prev = block((noise * noise_amp[idx + 1], x_prev_out_up))
+                x_prev_out = torch.tanh(x_prev)
 
         return x_prev_out, features_loss
 
