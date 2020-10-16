@@ -304,22 +304,14 @@ class GeneratorHPVAEGAN(nn.Module):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        size = real_zero.size()
-        real_mean, real_std = self._calc_mean_std(real_zero)
-        real_mean = real_mean.expand(size)
-        real_std = real_std.expand(size)
-
-        normalized_real_zero = (real_zero - real_mean) / real_std
-
         if noise_init is None:
-            mu, logvar = self.encode(normalized_real_zero)
+            mu, logvar = self.encode(real_zero)
             z_vae = reparameterize(mu, logvar, self.training)
         else:
             z_vae = noise_init
 
         z_vae = self.decoder(z_vae)
-        un_normalized_z_vae = z_vae * real_std + real_mean
-        vae_out = torch.tanh(un_normalized_z_vae)
+        vae_out = torch.tanh(z_vae)
 
         vae_out_features = VGG(utils.upscale_2d(vae_out, 2, self.opt))
         real_zero_features = VGG(utils.upscale_2d(real_zero, 2, self.opt))
