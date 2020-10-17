@@ -146,7 +146,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _, _, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction, _, _, _ = G_curr((real_zero, real), opt.Noise_Amps, mode="rec")
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -157,7 +157,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, features_loss, (mu, logvar) = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, features_loss, (mu, logvar) = G_curr((real_zero, real), opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
@@ -180,7 +180,7 @@ def train(opt, netG):
             # train with fake
             #################
             # todo: add `real` for spade
-            fake, _, features_loss = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _, features_loss = G_curr((real_zero, real), opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -240,7 +240,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae, _ = G_curr((real_zero, real), opt.Noise_Amps, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)

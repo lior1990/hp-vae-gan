@@ -300,7 +300,8 @@ class GeneratorHPVAEGAN(nn.Module):
         feat_mean = feat.view(N, C, -1).mean(dim=2).view(N, C, 1, 1)
         return feat_mean, feat_std
 
-    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, real_tup, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+        real_zero, real = real_tup
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
@@ -317,10 +318,7 @@ class GeneratorHPVAEGAN(nn.Module):
         real_zero_features = VGG(utils.upscale_2d(real_zero, 2, self.opt))
         features_loss = self.l1_loss(vae_out_features, real_zero_features)
 
-        if sample_init is not None:
-            x_prev_out, gan_features_loss = self.refinement_layers(real_zero, sample_init[0], sample_init[1], noise_amp, mode)
-        else:
-            x_prev_out, gan_features_loss = self.refinement_layers(real_zero, 0, vae_out, noise_amp, mode)
+        x_prev_out, gan_features_loss = self.refinement_layers(real_zero, 0, vae_out, noise_amp, real)
 
         features_loss += gan_features_loss
 
@@ -340,7 +338,7 @@ class GeneratorHPVAEGAN(nn.Module):
         features = F.normalize(features, p=2, dim=1)
         return features
 
-    def refinement_layers(self, real_zero, start_idx, x_prev_out, noise_amp, mode):
+    def refinement_layers(self, real_zero, start_idx, x_prev_out, noise_amp, real):
         global VGG_CACHE
 
         features_loss = torch.tensor(0, dtype=torch.float32, device=self.opt.device)
@@ -372,11 +370,11 @@ class GeneratorHPVAEGAN(nn.Module):
             noise = utils.generate_noise(ref=x_prev_out_up)
 
             if idx > spade_idx:
-                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], real_zero))
+                x_prev = block((x_prev_out_up, real))
+                x_prev_out = torch.tanh(x_prev)
             else:
                 x_prev = block(noise * noise_amp[idx + 1] + x_prev_out_up)
-
-            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+                x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
         return x_prev_out, features_loss
 
