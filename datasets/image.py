@@ -1,4 +1,5 @@
 import random
+import numpy as np
 from abc import ABCMeta, abstractmethod
 
 from torch.utils.data import Dataset
@@ -68,6 +69,16 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
     def __len__(self):
         pass
 
+    @staticmethod
+    def _read_img(img_path, opt):
+        image_full_scale = imageio.imread(img_path)
+        if len(image_full_scale.shape) == 2:
+            # grayscale image
+            image_full_scale = image_full_scale.repeat(opt.nc_im).reshape(image_full_scale.shape[0], image_full_scale.shape[1], opt.nc_im)
+        else:
+            image_full_scale = image_full_scale[:, :, :opt.nc_im]
+        return image_full_scale
+
 
 class SingleImageDataset(ImageDataset):
     def __init__(self, opt, transforms=None):
@@ -79,7 +90,7 @@ class SingleImageDataset(ImageDataset):
             exit(0)
 
         # Get original frame size and aspect-ratio
-        self.image_full_scale = imageio.imread(self.image_path)[:, :, :3]
+        self.image_full_scale = self._read_img(opt.image_path, opt)
         self.org_size = [self.image_full_scale.shape[0], self.image_full_scale.shape[1]]
         h, w = self.image_full_scale.shape[:2]
         opt.ar = h / w  # H2W
@@ -101,7 +112,7 @@ class MultipleImageDataset(ImageDataset):
 
         self.images = []
         for img_path in os.listdir(opt.image_path):
-            image_full_scale = imageio.imread(os.path.join(opt.image_path, img_path))[:, :, :3]
+            image_full_scale = self._read_img(os.path.join(opt.image_path, img_path), opt)
             self.images.append(image_full_scale)
 
         self.num_of_images = len(self.images)
