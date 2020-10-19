@@ -265,10 +265,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         features_loss += gan_features_loss
 
-        if noise_init is None:
-            return x_prev_out, vae_out, features_loss, (mu, logvar)
-        else:
-            return x_prev_out, vae_out, features_loss
+        return x_prev_out, vae_out, features_loss
 
     def _calc_vgg_features(self, tensor, scale_idx):
         if scale_idx == 0:

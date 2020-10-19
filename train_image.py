@@ -144,7 +144,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _, _, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec")[0]
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -155,12 +155,11 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, features_loss, (mu, logvar) = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, features_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            kl_loss = kl_criterion(mu, logvar)
-            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss + features_loss * opt.features_loss_weight
+            vae_loss = opt.rec_weight * rec_vae_loss + features_loss * opt.features_loss_weight
 
             total_loss += vae_loss
         else:
@@ -218,9 +217,7 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
-                opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
-            else:
+            if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             opt.summary.add_scalar('Video/Scale {}/features_loss'.format(opt.scale_idx), features_loss.item(), iteration)
