@@ -8,7 +8,7 @@ import torchvision
 
 import utils
 
-VGG = torchvision.models.vgg19(pretrained=True).features
+VGG = torchvision.models.vgg19(pretrained=True).features[:23]
 VGG_CACHE = {}
 for param in VGG.parameters():
     param.requires_grad = False
@@ -277,7 +277,7 @@ class GeneratorHPVAEGAN(nn.Module):
         for i in range(scale_idx):
             features = self.max_pool_2d(features)
 
-        features = features.flatten(start_dim=1)
+        features = features.view(features.shape[0], 512, -1)
         features = F.normalize(features, p=2, dim=1)
         return features
 
