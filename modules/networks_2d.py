@@ -41,10 +41,10 @@ def get_activation(act):
     return activations[act]
 
 
-def reparameterize(mu, logvar, training):
+def reparameterize(mu, logvar, training, eps_weight=1):
     if training:
         std = logvar.mul(0.5).exp_()
-        eps = torch.zeros_like(std).normal_()
+        eps = torch.zeros_like(std).normal_() * eps_weight
         return eps.mul(std).add_(mu)
     else:
         return torch.zeros_like(mu).normal_()
@@ -246,11 +246,15 @@ class GeneratorHPVAEGAN(nn.Module):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        if noise_init is None:
-            mu, logvar = self.encode(real_zero)
-            z_vae = reparameterize(mu, logvar, self.training)
+        mu, logvar = self.encode(real_zero)
+
+        if mode == "rand":
+            z_vae = reparameterize(mu, logvar, self.training, eps_weight=self.opt.vae_noise_weight)
         else:
-            z_vae = noise_init
+            # reconstruction mode
+            std = logvar.mul(0.5).exp_()
+            ones = torch.ones_like(std)
+            z_vae = ones.mul(std).add_(mu)
 
         vae_out = torch.tanh(self.decoder(z_vae))
 

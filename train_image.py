@@ -288,6 +288,7 @@ if __name__ == '__main__':
     # pyramid parameters:
     parser.add_argument('--scale-factor', type=float, default=0.75, help='pyramid scale factor')
     parser.add_argument('--noise_amp', type=float, default=0.1, help='addative noise cont weight')
+    parser.add_argument('--vae-noise-weight', type=float, default=1, help='vae noise weight')
     parser.add_argument('--min-size', type=int, default=32, help='image minimal size at the coarser scale')
     parser.add_argument('--max-size', type=int, default=256, help='image minimal size at the coarser scale')
 
