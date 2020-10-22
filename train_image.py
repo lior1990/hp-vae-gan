@@ -89,6 +89,8 @@ def train(opt, netG):
 
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
+    l1_loss = torch.nn.L1Loss()
+
     # Parallel
     if opt.device == 'cuda':
         G_curr = torch.nn.DataParallel(netG)
@@ -161,7 +163,14 @@ def train(opt, netG):
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
             vae_loss = opt.rec_weight * rec_vae_loss + features_loss * opt.features_loss_weight
 
-            total_loss += vae_loss
+            vae_eps1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.vae_noise_weight
+            vae_eps2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.vae_noise_weight
+            _, generated_vae1, _ = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
+            _, generated_vae2, _ = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
+
+            diversity_loss = l1_loss(vae_eps1, vae_eps2) / (l1_loss(generated_vae1, generated_vae2) + 0.001)
+
+            total_loss += vae_loss + diversity_loss
         else:
             ############################
             # (2) Update D network: maximize D(x) + D(G(z))
@@ -176,7 +185,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _, features_loss = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _, features_loss = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", vae_eps=noise_init)
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -234,7 +243,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", vae_eps=noise_init)
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)

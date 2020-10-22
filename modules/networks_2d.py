@@ -242,14 +242,17 @@ class GeneratorHPVAEGAN(nn.Module):
             global VGG_CACHE
             VGG_CACHE.clear()  # reduce memory consumption between scales
 
-    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand', vae_eps=None):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
         mu, logvar = self.encode(real_zero)
 
         if mode == "rand":
-            z_vae = reparameterize(mu, logvar, self.training, eps_weight=self.opt.vae_noise_weight)
+            # reparameterize
+            std = logvar.mul(0.5).exp_()
+            eps = torch.zeros_like(std).normal_() * vae_eps
+            z_vae = eps.mul(std).add_(mu)
         else:
             # reconstruction mode
             std = logvar.mul(0.5).exp_()
