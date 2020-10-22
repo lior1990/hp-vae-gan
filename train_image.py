@@ -168,7 +168,7 @@ def train(opt, netG):
             _, generated_vae1, _ = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
             _, generated_vae2, _ = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
 
-            diversity_loss = l1_loss(vae_eps1, vae_eps2) / (l1_loss(generated_vae1, generated_vae2) + 0.001)
+            diversity_loss = l1_loss(vae_eps1, vae_eps2) / (l1_loss(generated_vae1, generated_vae2) + 0.001) * opt.diversity_loss_weight
 
             total_loss += vae_loss + diversity_loss
         else:
@@ -311,6 +311,7 @@ if __name__ == '__main__':
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--features-loss-weight', type=float, default=1.0, help='VGG features loss weight')
+    parser.add_argument('--diversity-loss-weight', type=float, default=0.5, help='Diversity')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
