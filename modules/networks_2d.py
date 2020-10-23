@@ -127,7 +127,7 @@ class Encode2DVAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(2*opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
@@ -226,16 +226,16 @@ class GeneratorHPVAEGAN(nn.Module):
         self.auto_decoder = nn.Sequential()
         self.decoder = nn.Sequential()
 
-        def init_decoder(decoder):
+        def init_decoder(decoder, input_channels):
             # Normal Decoder
-            decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
+            decoder.add_module('head', ConvBlock2D(input_channels, N, opt.ker_size, opt.padd_size, stride=1))
             for i in range(opt.num_layer):
                 block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
                 decoder.add_module('block%d' % (i), block)
             decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
-        init_decoder(self.auto_decoder)
-        init_decoder(self.decoder)
+        init_decoder(self.auto_decoder, opt.nc_im)
+        init_decoder(self.decoder, opt.latent_dim)
 
         # 1x1 Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
