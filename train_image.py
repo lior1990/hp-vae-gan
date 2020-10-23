@@ -175,12 +175,12 @@ def train(opt, netG):
             # diversity_loss = (diversity_loss_fn(z_vae1, z_vae2) / (diversity_loss_fn(generated_vae1, generated_vae2) + 0.001)) * opt.diversity_loss_weight
 
             # objective: maximize the ratio between generated images and their corresponding latent space vectors
-            lz = torch.mean(torch.abs(generated_vae2 - generated_vae1)) / torch.mean(torch.abs(z_vae2 - z_vae1)) * opt.diversity_loss_weight
+            lz = torch.mean(torch.abs(generated_vae2 - generated_vae1)) / torch.mean(torch.abs(z_vae2 - z_vae1))
             eps = 1 * 1e-5
             # objective: maximize lz
             diversity_loss = 1 / (lz + eps)
 
-            total_loss += vae_loss + diversity_loss
+            total_loss += vae_loss + diversity_loss * opt.diversity_loss_weight
         else:
             ############################
             # (2) Update D network: maximize D(x) + D(G(z))
