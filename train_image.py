@@ -90,6 +90,9 @@ def train(opt, netG):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     l1_loss = torch.nn.L1Loss()
+    l2_loss = torch.nn.MSELoss()
+
+    diversity_loss_fn = l1_loss if opt.diversity_loss_fn == "l1" else l2_loss
 
     # Parallel
     if opt.device == 'cuda':
@@ -168,7 +171,7 @@ def train(opt, netG):
             _, generated_vae1, _, z_vae1 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
             _, generated_vae2, _, z_vae2 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
 
-            diversity_loss = l1_loss(z_vae1, z_vae2) / (l1_loss(generated_vae1, generated_vae2) + 0.001) * opt.diversity_loss_weight
+            diversity_loss = (diversity_loss_fn(z_vae1, z_vae2) / (diversity_loss_fn(generated_vae1, generated_vae2) + 0.001)) * opt.diversity_loss_weight
 
             total_loss += vae_loss + diversity_loss
         else:
@@ -312,6 +315,7 @@ if __name__ == '__main__':
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--features-loss-weight', type=float, default=1.0, help='VGG features loss weight')
     parser.add_argument('--diversity-loss-weight', type=float, default=0.5, help='Diversity')
+    parser.add_argument('--diversity-loss-fn', type=str, default="l1", help='diversity loss function')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
