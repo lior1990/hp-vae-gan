@@ -160,22 +160,25 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, features_loss, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, features_loss, vae_params = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
+            z_vae, mu, logvar, mu2 = vae_params
+            kl_loss = kl_criterion(mu, logvar)
+
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            vae_loss = opt.rec_weight * rec_vae_loss + features_loss * opt.features_loss_weight
+            vae_loss = opt.rec_weight * rec_vae_loss + features_loss * opt.features_loss_weight + opt.kl_weight * kl_loss
 
             vae_eps1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.vae_noise_weight
             vae_eps2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.vae_noise_weight
 
-            _, generated_vae1, _, z_vae1 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
-            _, generated_vae2, _, z_vae2 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
+            _, generated_vae1, _, vae_params1 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
+            _, generated_vae2, _, vae_params2 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
 
             # diversity_loss = (diversity_loss_fn(z_vae1, z_vae2) / (diversity_loss_fn(generated_vae1, generated_vae2) + 0.001)) * opt.diversity_loss_weight
 
             # objective: maximize the ratio between generated images and their corresponding latent space vectors
-            lz = torch.mean(torch.abs(generated_vae2 - generated_vae1)) / torch.mean(torch.abs(z_vae2 - z_vae1))
+            lz = torch.mean(torch.abs(generated_vae2 - generated_vae1)) / torch.mean(torch.abs(vae_params2[0] - vae_params1[0]))
             eps = 1 * 1e-5
             # objective: maximize lz
             diversity_loss = 1 / (lz + eps)

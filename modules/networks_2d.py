@@ -111,13 +111,15 @@ class Encode2DVAE(nn.Module):
         self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
+        self.mu2 = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
     def forward(self, x):
         features = self.features(x)
         mu = self.mu(features)
         logvar = self.logvar(features)
+        mu2 = self.mu2(features)
 
-        return mu, logvar
+        return mu, logvar, mu2
 
 
 class Encode2DVAE_nb(nn.Module):
@@ -246,18 +248,18 @@ class GeneratorHPVAEGAN(nn.Module):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        mu, logvar = self.encode(real_zero)
+        mu, logvar, mu2 = self.encode(real_zero)
 
         if mode == "rand":
             # reparameterize
             std = logvar.mul(0.5).exp_()
             eps = torch.zeros_like(std).normal_()
-            z_vae = eps.mul(std).add_(mu)
+            z_vae = eps.mul(std).add_(mu + mu2)
         else:
             # reconstruction mode
             std = logvar.mul(0.5).exp_()
             ones = torch.ones_like(std)
-            z_vae = ones.mul(std).add_(mu)
+            z_vae = ones.mul(std).add_(mu + mu2)
 
         vae_out = torch.tanh(self.decoder(z_vae))
 
@@ -272,7 +274,9 @@ class GeneratorHPVAEGAN(nn.Module):
 
         features_loss += gan_features_loss
 
-        return x_prev_out, vae_out, features_loss, z_vae
+        vae_params = (z_vae, mu, logvar, mu2)
+
+        return x_prev_out, vae_out, features_loss, vae_params
 
     def _calc_vgg_features(self, tensor, scale_idx):
         if scale_idx == 0:
