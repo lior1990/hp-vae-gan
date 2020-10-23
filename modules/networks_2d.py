@@ -235,7 +235,7 @@ class GeneratorHPVAEGAN(nn.Module):
             decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
         init_decoder(self.auto_decoder, opt.nc_im)
-        init_decoder(self.decoder, opt.latent_dim)
+        init_decoder(self.decoder, opt.latent_dim+opt.nc_im)
 
         # 1x1 Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
@@ -289,7 +289,7 @@ class GeneratorHPVAEGAN(nn.Module):
             ones = torch.ones_like(std)
             z_vae = ones.mul(std).add_(mu)
 
-        vae_out = torch.tanh(self.decoder(z_vae))
+        vae_out = torch.tanh(self.decoder(torch.cat([class_z, z_vae], dim=1)))
 
         vae_out_features = VGG(utils.upscale_2d(vae_out, 2, self.opt))
         real_zero_features = VGG(utils.upscale_2d(real_zero, 2, self.opt))
