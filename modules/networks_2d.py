@@ -251,7 +251,7 @@ class GeneratorHPVAEGAN(nn.Module):
         if mode == "rand":
             # reparameterize
             std = logvar.mul(0.5).exp_()
-            eps = torch.zeros_like(std).normal_() * vae_eps
+            eps = torch.zeros_like(std).normal_()
             z_vae = eps.mul(std).add_(mu)
         else:
             # reconstruction mode
@@ -272,7 +272,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         features_loss += gan_features_loss
 
-        return x_prev_out, vae_out, features_loss, z_vae
+        return x_prev_out, vae_out, features_loss, mu
 
     def _calc_vgg_features(self, tensor, scale_idx):
         if scale_idx == 0:
