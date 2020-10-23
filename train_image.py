@@ -174,7 +174,7 @@ def train(opt, netG):
                 _, generated_vae1, _, mu = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps)
                 mu1, mu2 = mu[0].unsqueeze(dim=0), mu[1].unsqueeze(dim=0)
 
-                diversity_loss = diversity_loss_fn(mu1, mu2)
+                diversity_loss = -diversity_loss_fn(mu1, mu2)
                 total_loss += diversity_loss * opt.diversity_loss_weight
 
             total_loss += vae_loss
