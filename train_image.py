@@ -160,9 +160,15 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, features_loss, vae_params = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        if opt.scale_idx == 0:
+            ae_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec", scale=0)
+        else:
+            generated, generated_vae, features_loss, vae_params = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
-        if opt.vae_levels >= opt.scale_idx + 1:
+        if opt.scale_idx == 0:
+            rec_vae_loss = opt.rec_loss(ae_reconstruction, real_zero)
+            total_loss += opt.rec_weight * rec_vae_loss
+        elif opt.vae_levels >= opt.scale_idx + 1:
             z_vae, mu, logvar, ae_reconstruction = vae_params
             kl_loss = kl_criterion(mu, logvar)
 
@@ -240,12 +246,15 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
+            if opt.scale_idx == 0:
+                opt.summary.add_scalar('Video/Scale {}/AE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
+            elif opt.vae_levels >= opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            opt.summary.add_scalar('Video/Scale {}/features_loss'.format(opt.scale_idx), features_loss.item(), iteration)
+            if opt.scale_idx > 0:
+                opt.summary.add_scalar('Video/Scale {}/features_loss'.format(opt.scale_idx), features_loss.item(), iteration)
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
@@ -254,6 +263,11 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
+                if opt.scale_idx == 0:
+                    opt.summary.visualize_image(opt, iteration, real, 'Real')
+                    opt.summary.visualize_image(opt, iteration, ae_reconstruction, 'AE')
+                    continue
+
                 with torch.no_grad():
                     fake_var = []
                     fake_vae_var = []
