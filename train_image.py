@@ -157,7 +157,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, features_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, features_loss, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
@@ -165,10 +165,10 @@ def train(opt, netG):
 
             vae_eps1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.vae_noise_weight
             vae_eps2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.vae_noise_weight
-            _, generated_vae1, _ = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
-            _, generated_vae2, _ = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
+            _, generated_vae1, _, z_vae1 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps1)
+            _, generated_vae2, _, z_vae2 = G_curr(real_zero, opt.Noise_Amps, mode="rand", vae_eps=vae_eps2)
 
-            diversity_loss = l1_loss(vae_eps1, vae_eps2) / (l1_loss(generated_vae1, generated_vae2) + 0.001) * opt.diversity_loss_weight
+            diversity_loss = l1_loss(z_vae1, z_vae2) / (l1_loss(generated_vae1, generated_vae2) + 0.001) * opt.diversity_loss_weight
 
             total_loss += vae_loss + diversity_loss
         else:
@@ -185,7 +185,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _, features_loss = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", vae_eps=noise_init)
+            fake, _, features_loss, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", vae_eps=noise_init)
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -243,7 +243,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", vae_eps=noise_init)
+                        fake, fake_vae, _, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", vae_eps=noise_init)
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)
