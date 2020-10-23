@@ -98,6 +98,25 @@ class FeatureExtractor(nn.Sequential):
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
 
 
+class Encode2DAE(nn.Module):
+    def __init__(self, opt, out_dim=None, num_blocks=2):
+        super(Encode2DAE, self).__init__()
+
+        if out_dim is None:
+            output_dim = opt.nfc
+        else:
+            assert type(out_dim) is int
+            output_dim = out_dim
+
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False)
+
+    def forward(self, x):
+        features = self.features(x)
+        z = self.mu(features)
+        return z
+
+
 class Encode2DVAE(nn.Module):
     def __init__(self, opt, out_dim=None, num_blocks=2):
         super(Encode2DVAE, self).__init__()
@@ -111,15 +130,13 @@ class Encode2DVAE(nn.Module):
         self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
-        self.mu2 = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
     def forward(self, x):
         features = self.features(x)
         mu = self.mu(features)
         logvar = self.logvar(features)
-        mu2 = self.mu2(features)
 
-        return mu, logvar, mu2
+        return mu, logvar
 
 
 class Encode2DVAE_nb(nn.Module):
@@ -203,15 +220,22 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
+        self.auto_encoder = Encode2DAE(opt, out_dim=opt.nc_im, num_blocks=opt.enc_blocks)
         self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+
+        self.auto_decoder = nn.Sequential()
         self.decoder = nn.Sequential()
 
-        # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
-        for i in range(opt.num_layer):
-            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
-            self.decoder.add_module('block%d' % (i), block)
-        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
+        def init_decoder(decoder):
+            # Normal Decoder
+            decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
+            for i in range(opt.num_layer):
+                block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+                decoder.add_module('block%d' % (i), block)
+            decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
+
+        init_decoder(self.auto_decoder)
+        init_decoder(self.decoder)
 
         # 1x1 Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
@@ -248,18 +272,22 @@ class GeneratorHPVAEGAN(nn.Module):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        mu, logvar, mu2 = self.encode(real_zero)
+        class_z = self.auto_encoder(real_zero)
+        ae_reconstruction = self.auto_decoder(class_z)
+
+        # convert this VAE to CVAE
+        mu, logvar = self.encode(torch.cat([class_z, real_zero], dim=1))
 
         if mode == "rand":
             # reparameterize
             std = logvar.mul(0.5).exp_()
             eps = torch.zeros_like(std).normal_()
-            z_vae = eps.mul(std).add_(mu + mu2)
+            z_vae = eps.mul(std).add_(mu)
         else:
             # reconstruction mode
             std = logvar.mul(0.5).exp_()
             ones = torch.ones_like(std)
-            z_vae = ones.mul(std).add_(mu + mu2)
+            z_vae = ones.mul(std).add_(mu)
 
         vae_out = torch.tanh(self.decoder(z_vae))
 
@@ -274,7 +302,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         features_loss += gan_features_loss
 
-        vae_params = (z_vae, mu, logvar, mu2)
+        vae_params = (z_vae, mu, logvar, ae_reconstruction)
 
         return x_prev_out, vae_out, features_loss, vae_params
 
