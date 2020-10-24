@@ -58,13 +58,8 @@ def train_ae(opt, netG):
             iterator = iter(opt.data_loader)
             data = next(iterator)
 
-        if opt.scale_idx > 0:
-            real, real_zero = data
-            real = real.to(opt.device)
-            real_zero = real_zero.to(opt.device)
-        else:
-            real = data.to(opt.device)
-            real_zero = real
+        real = data.to(opt.device)
+        real_zero = real
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
         initial_size = [int(initial_size * opt.ar), initial_size]
@@ -94,13 +89,6 @@ def train_ae(opt, netG):
                 opt.summary.visualize_image(opt, iteration, ae_reconstruction, 'AE')
 
     epoch_iterator.close()
-
-    # Save data
-    opt.saver.save_checkpoint({
-        'scale': None,
-        'state_dict': netG.state_dict(),
-        'optimizer': optimizer_ae.state_dict(),
-    }, 'netG.pth')
 
 
 def train(opt, netG):
@@ -316,9 +304,7 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.scale_idx == 0:
-                opt.summary.add_scalar('Video/Scale {}/AE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
-            elif opt.vae_levels >= opt.scale_idx + 1:
+            if opt.vae_levels >= opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
@@ -533,6 +519,8 @@ if __name__ == '__main__':
         opt.resumed_idx = -1
 
     train_ae(opt, netG)
+    for param in itertools.chain(netG.auto_encoder.parameters(), netG.auto_decoder.parameters()):
+        param.requires_grad = False
 
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):

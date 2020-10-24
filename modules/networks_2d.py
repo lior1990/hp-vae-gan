@@ -227,7 +227,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.N = N
 
         auto_encoder_output_dim = opt.nc_im
-        self.auto_encoder = Encode2DAE(opt, out_dim=auto_encoder_output_dim, num_blocks=opt.enc_blocks)
+        self.auto_encoder = Encode2DAE(opt, out_dim=auto_encoder_output_dim, num_blocks=1)
         self.encode = Encode2DVAE(opt, in_dim=opt.nc_im + auto_encoder_output_dim, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         self.auto_decoder = nn.Sequential()
