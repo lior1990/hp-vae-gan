@@ -226,8 +226,9 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.auto_encoder = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
-        self.encode = Encode2DVAE(opt, in_dim=opt.nc_im + opt.latent_dim, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        auto_encoder_output_dim = opt.nc_im
+        self.auto_encoder = Encode2DAE(opt, out_dim=auto_encoder_output_dim, num_blocks=opt.enc_blocks)
+        self.encode = Encode2DVAE(opt, in_dim=opt.nc_im + auto_encoder_output_dim, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         self.auto_decoder = nn.Sequential()
         self.decoder = nn.Sequential()
@@ -240,15 +241,8 @@ class GeneratorHPVAEGAN(nn.Module):
                 decoder.add_module('block%d' % (i), block)
             decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
-        init_decoder(self.auto_decoder, opt.latent_dim)
-        init_decoder(self.decoder, 2*opt.latent_dim)
-
-        # 1x1 Decoder
-        # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
-        # for i in range(opt.num_layer):
-        #     block = ConvBlock2D(N, N, 1, 0, stride=1)
-        #     self.decoder.add_module('block%d' % (i), block)
-        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, 1, 1, 0))
+        init_decoder(self.auto_decoder, auto_encoder_output_dim)
+        init_decoder(self.decoder, opt.latent_dim + auto_encoder_output_dim)
 
         self.body = torch.nn.ModuleList([])
         self.max_pool_2d = nn.MaxPool2d(opt.ker_size, stride=1, padding=1)
