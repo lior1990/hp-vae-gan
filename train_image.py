@@ -1,3 +1,5 @@
+import itertools
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -25,6 +27,80 @@ clear = colorama.Style.RESET_ALL
 blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
 green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
+
+
+def train_ae(opt, netG):
+    optimizer_ae = optim.Adam(itertools.chain(netG.auto_encoder.parameters(), netG.auto_decoder.parameters()), lr=opt.lr_g, betas=(opt.beta1, 0.999))
+
+    # Parallel
+    if opt.device == 'cuda':
+        G_curr = torch.nn.DataParallel(netG)
+    else:
+        G_curr = netG
+
+    progressbar_args = {
+        "iterable": range(opt.niter),
+        "desc": "Training AE",
+        "train": True,
+        "offset": 0,
+        "logging_on_update": False,
+        "logging_on_close": True,
+        "postfix": True
+    }
+    epoch_iterator = tools.create_progressbar(**progressbar_args)
+
+    iterator = iter(data_loader)
+
+    for iteration in epoch_iterator:
+        try:
+            data = next(iterator)
+        except StopIteration:
+            iterator = iter(opt.data_loader)
+            data = next(iterator)
+
+        if opt.scale_idx > 0:
+            real, real_zero = data
+            real = real.to(opt.device)
+            real_zero = real_zero.to(opt.device)
+        else:
+            real = data.to(opt.device)
+            real_zero = real
+
+        initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
+        initial_size = [int(initial_size * opt.ar), initial_size]
+        opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
+
+        ############################
+        # Update AE network
+        ###########################
+        ae_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec", ae_mode=True)
+        rec_ae_loss = opt.rec_loss(ae_reconstruction, real_zero)
+        total_loss = opt.rec_weight * rec_ae_loss
+
+        G_curr.zero_grad()
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
+        optimizer_ae.step()
+
+        # Update progress bar
+        epoch_iterator.set_description('AE, Iteration [{}/{}]'.format(iteration + 1, opt.niter))
+
+        if opt.visualize:
+            # Tensorboard
+            opt.summary.add_scalar('Video/Scale {}/AE'.format(opt.scale_idx), rec_ae_loss.item(), iteration)
+
+            if iteration % opt.print_interval == 0:
+                opt.summary.visualize_image(opt, iteration, real, 'Real')
+                opt.summary.visualize_image(opt, iteration, ae_reconstruction, 'AE')
+
+    epoch_iterator.close()
+
+    # Save data
+    opt.saver.save_checkpoint({
+        'scale': None,
+        'state_dict': netG.state_dict(),
+        'optimizer': optimizer_ae.state_dict(),
+    }, 'netG.pth')
 
 
 def train(opt, netG):
@@ -160,15 +236,9 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        if opt.scale_idx == 0:
-            ae_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec", scale=0)
-        else:
-            generated, generated_vae, features_loss, vae_params = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, features_loss, vae_params = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
-        if opt.scale_idx == 0:
-            rec_vae_loss = opt.rec_loss(ae_reconstruction, real_zero)
-            total_loss += opt.rec_weight * rec_vae_loss
-        elif opt.vae_levels >= opt.scale_idx + 1:
+        if opt.vae_levels >= opt.scale_idx + 1:
             z_vae, mu, logvar, ae_reconstruction = vae_params
             kl_loss = kl_criterion(mu, logvar)
 
@@ -461,6 +531,8 @@ if __name__ == '__main__':
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
     else:
         opt.resumed_idx = -1
+
+    train_ae(opt, netG)
 
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):

@@ -118,8 +118,14 @@ class Encode2DAE(nn.Module):
 
 
 class Encode2DVAE(nn.Module):
-    def __init__(self, opt, out_dim=None, num_blocks=2):
+    def __init__(self, opt, in_dim=None, out_dim=None, num_blocks=2):
         super(Encode2DVAE, self).__init__()
+
+        if in_dim is None:
+            input_dim = opt.nc_im
+        else:
+            assert type(in_dim) is int
+            input_dim = in_dim
 
         if out_dim is None:
             output_dim = opt.nfc
@@ -127,7 +133,7 @@ class Encode2DVAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(2*opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(input_dim, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
@@ -220,8 +226,8 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.auto_encoder = Encode2DAE(opt, out_dim=opt.nc_im, num_blocks=opt.enc_blocks)
-        self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        self.auto_encoder = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        self.encode = Encode2DVAE(opt, in_dim=opt.nc_im + opt.latent_dim, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         self.auto_decoder = nn.Sequential()
         self.decoder = nn.Sequential()
@@ -234,8 +240,8 @@ class GeneratorHPVAEGAN(nn.Module):
                 decoder.add_module('block%d' % (i), block)
             decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
-        init_decoder(self.auto_decoder, opt.nc_im)
-        init_decoder(self.decoder, opt.latent_dim+opt.nc_im)
+        init_decoder(self.auto_decoder, opt.latent_dim)
+        init_decoder(self.decoder, 2*opt.latent_dim)
 
         # 1x1 Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
@@ -268,14 +274,14 @@ class GeneratorHPVAEGAN(nn.Module):
             global VGG_CACHE
             VGG_CACHE.clear()  # reduce memory consumption between scales
 
-    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand', vae_eps=None, scale=None):
+    def forward(self, real_zero, noise_amp, noise_init=None, sample_init=None, mode='rand', vae_eps=None, ae_mode=False):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
         class_z = self.auto_encoder(real_zero)
         ae_reconstruction = self.auto_decoder(class_z)
 
-        if scale == 0:
+        if ae_mode:
             return ae_reconstruction
 
         # convert this VAE to CVAE
