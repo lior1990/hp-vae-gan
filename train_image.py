@@ -595,7 +595,7 @@ def main():
             netG_meta.init_next_stage()
             netG_meta.to(opt.device)
 
-        regular_train = opt.vae_levels < opt.scale_idx + 1
+        regular_train = opt.vae_levels < opt.scale_idx
 
         if regular_train:
             netG_meta.to("cpu")
