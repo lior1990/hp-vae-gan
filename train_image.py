@@ -100,7 +100,7 @@ def orig_train(opt, netG, data_loader, noise_amps):
         try:
             data = next(iterator)
         except StopIteration:
-            iterator = iter(opt.data_loader)
+            iterator = iter(data_loader)
             data = next(iterator)
 
         if opt.scale_idx > 0:
@@ -595,7 +595,7 @@ def main():
             netG_meta.init_next_stage()
             netG_meta.to(opt.device)
 
-        regular_train = opt.vae_levels < opt.scale_idx
+        regular_train = opt.vae_levels < opt.scale_idx + 1
 
         if regular_train:
             netG_meta.to("cpu")
@@ -710,7 +710,7 @@ def main():
         if opt.vae_levels < opt.scale_idx + 1:
             opt.saver.save_checkpoint({
                 'scale': opt.scale_idx,
-                'state_dict': D_curr.state_dict(),
+                'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
                 'optimizer': optimizerD.state_dict(),
             }, 'netD_{}.pth'.format(opt.scale_idx))
 
