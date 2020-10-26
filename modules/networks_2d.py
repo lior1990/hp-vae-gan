@@ -281,7 +281,10 @@ class GeneratorHPVAEGAN(nn.Module):
         # convert this VAE to CVAE
         mu, logvar = self.encode(torch.cat([class_z, real_zero], dim=1))
 
-        z_vae = reparameterize(mu, logvar, self.training)
+        if mode == "rand":
+            z_vae = torch.zeros_like(mu).normal_()
+        else:
+            z_vae = reparameterize(mu, logvar, self.training)
 
         vae_out = torch.tanh(self.decoder(torch.cat([class_z, z_vae], dim=1)))
 
