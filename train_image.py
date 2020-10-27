@@ -194,6 +194,8 @@ def train(opt, netG):
         else:
             generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
+        errG_total = 0
+
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
             vae_loss = opt.rec_weight * rec_vae_loss
@@ -203,16 +205,15 @@ def train(opt, netG):
             ############################
             # (3) Update G network: maximize D(G(z))
             ###########################
-            errG_total = 0
             rec_loss = opt.rec_loss(generated, real)
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
-            output = D_curr(fake)
-            errG = -output.mean() * opt.disc_loss_weight
-            errG_total += errG
+        output = D_curr(fake)
+        errG = -output.mean() * opt.disc_loss_weight
+        errG_total += errG
 
-            total_loss += errG_total
+        total_loss += errG_total
 
         G_curr.zero_grad()
         total_loss.backward()
