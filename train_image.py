@@ -227,6 +227,7 @@ def train(opt, netG):
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
+            opt.summary.add_scalar('Video/Scale {}/diversity_loss'.format(opt.scale_idx), diversity_loss.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             if opt.vae_levels < opt.scale_idx + 1:
