@@ -86,8 +86,7 @@ def train(opt, netG):
     # Parallel
     if opt.device == 'cuda':
         G_curr = torch.nn.DataParallel(netG)
-        if opt.vae_levels < opt.scale_idx + 1:
-            D_curr = torch.nn.DataParallel(D_curr)
+        D_curr = torch.nn.DataParallel(D_curr)
     else:
         G_curr = netG
 
