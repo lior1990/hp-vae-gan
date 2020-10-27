@@ -189,7 +189,10 @@ def train(opt, netG):
         optimizerD.step()
 
         # original code
-        generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        if opt.noisy_reconstruction:
+            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec", noise_init=noise_init)
+        else:
+            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
@@ -313,6 +316,7 @@ if __name__ == '__main__':
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', action='store_true', default=False, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
+    parser.add_argument('--noisy-reconstruction', action='store_true', default=False, help='VAE reconstruction with noise')
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
