@@ -90,6 +90,24 @@ class FeatureExtractor(nn.Sequential):
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
 
 
+class Encode2DAE(nn.Module):
+    def __init__(self, opt, out_dim=None, num_blocks=2):
+        super(Encode2DAE, self).__init__()
+
+        if out_dim is None:
+            output_dim = opt.nfc
+        else:
+            assert type(out_dim) is int
+            output_dim = out_dim
+
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.encoder = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
+
+    def forward(self, x):
+        features = self.features(x)
+        return self.encoder(features)
+
+
 class Encode2DVAE(nn.Module):
     def __init__(self, opt, out_dim=None, num_blocks=2):
         super(Encode2DVAE, self).__init__()
@@ -193,7 +211,7 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
         self.decoder = nn.Sequential()
 
         # Normal Decoder
@@ -202,13 +220,6 @@ class GeneratorHPVAEGAN(nn.Module):
             block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
         self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
-
-        # 1x1 Decoder
-        # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
-        # for i in range(opt.num_layer):
-        #     block = ConvBlock2D(N, N, 1, 0, stride=1)
-        #     self.decoder.add_module('block%d' % (i), block)
-        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, 1, 1, 0))
 
         self.body = torch.nn.ModuleList([])
 
@@ -227,27 +238,19 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
-        if sample_init is not None:
-            assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
+    def forward(self, img, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+        z_ae = self.encode(img)
 
         if noise_init is None:
-            mu, logvar = self.encode(video)
-            z_vae = reparameterize(mu, logvar, self.training)
+            z_vae = z_ae
         else:
-            z_vae = noise_init
+            z_vae = noise_init + z_ae
 
         vae_out = torch.tanh(self.decoder(z_vae))
 
-        if sample_init is not None:
-            x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
-        else:
-            x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
+        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
 
-        if noise_init is None:
-            return x_prev_out, vae_out, (mu, logvar)
-        else:
-            return x_prev_out, vae_out
+        return x_prev_out, vae_out
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
