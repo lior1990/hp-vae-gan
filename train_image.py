@@ -149,8 +149,8 @@ def train(opt, netG):
         total_loss = 0
 
         # diversity loss
-        noise1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
-        noise2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
+        noise1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
+        noise2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
 
         real_zero_pair = torch.cat([real_zero, real_zero], dim=0)
         noise_pair = torch.cat([noise1, noise2], dim=0)
@@ -307,6 +307,7 @@ if __name__ == '__main__':
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--diversity-loss-weight', type=float, default=1.0, help='diversity loss weight')
+    parser.add_argument('--diversity-noise-weight', type=float, default=0.5, help='diversity noise weight')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
