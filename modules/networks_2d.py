@@ -232,11 +232,8 @@ class GeneratorHPVAEGAN(nn.Module):
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
         cls = torch.ones_like(video) * idx.view(-1, 1, 1, 1)
-        if noise_init is None:
-            mu, logvar = self.encode(torch.cat([video, cls], dim=1))
-            z_vae = reparameterize(mu, logvar, self.training)
-        else:
-            z_vae = noise_init
+        mu, logvar = self.encode(torch.cat([video, cls], dim=1))
+        z_vae = reparameterize(mu, logvar, self.training)
 
         vae_out = torch.tanh(self.decoder(torch.cat([z_vae, cls], dim=1)))
 
