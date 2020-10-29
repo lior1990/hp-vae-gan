@@ -100,7 +100,7 @@ class Encode2DVAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(2*opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
@@ -197,7 +197,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim + opt.nc_im, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.num_layer):
             block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
@@ -227,17 +227,18 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, idx, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
+        cls = torch.ones_like(video) * idx.view(-1, 1, 1, 1)
         if noise_init is None:
-            mu, logvar = self.encode(video)
+            mu, logvar = self.encode(torch.cat([video, cls], dim=1))
             z_vae = reparameterize(mu, logvar, self.training)
         else:
             z_vae = noise_init
 
-        vae_out = torch.tanh(self.decoder(z_vae))
+        vae_out = torch.tanh(self.decoder(torch.cat([z_vae, cls], dim=1)))
 
         if sample_init is not None:
             x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
