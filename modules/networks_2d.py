@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import copy
 import utils
+from modules.self_attention import SelfAttention
 
 
 def conv_weights_init_ones(m):
@@ -201,6 +202,8 @@ class GeneratorHPVAEGAN(nn.Module):
         for i in range(opt.num_layer):
             block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
+            if i > 0 and i % 2 == 0:
+                self.decoder.add_module(f"self_attention{i}", SelfAttention(N))
         self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
         # 1x1 Decoder
