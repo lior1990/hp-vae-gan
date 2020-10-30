@@ -328,6 +328,7 @@ if __name__ == '__main__':
     parser.add_argument('--print-interval', type=int, default=100, help='print interva')
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
+    parser.add_argument('--tag', type=str, default='', help='neptune ai tag')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -342,8 +343,8 @@ if __name__ == '__main__':
     opt.saver = utils.ImageSaver(opt)
 
     # Define Tensorboard Summary
-    if use_neptune:
-        neptune_exp = neptune.create_experiment(name=opt.checkname, params=opt.__dict__).__enter__()
+    if use_neptune and opt.tag:
+        neptune_exp = neptune.create_experiment(name=opt.checkname, params=opt.__dict__, tags=[opt.tag]).__enter__()
         opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir, neptune_exp=neptune_exp)
     else:
         opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir)
