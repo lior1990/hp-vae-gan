@@ -1,6 +1,7 @@
 import os
 from torchvision.utils import make_grid
 from torch.utils.tensorboard import SummaryWriter
+from torchvision import transforms
 
 
 def norm_ip(img, min, max):
@@ -16,12 +17,17 @@ def norm_range(t, range=None):
 
 
 class TensorboardSummary(object):
-    def __init__(self, directory):
+    def __init__(self, directory, neptune_exp=None):
         self.directory = directory
         self.writer = SummaryWriter(log_dir=os.path.join(self.directory))
+        self.neptune_exp = neptune_exp
+        self.to_image = transforms.ToPILImage()
 
-    def add_scalar(self, *args):
-        self.writer.add_scalar(*args)
+    def add_scalar(self, log_name, value, index):
+        if self.neptune_exp:
+            self.neptune_exp.log_metric(log_name, index, value)
+        else:
+            self.writer.add_scalar(log_name, value, index)
 
     def visualize_video(self, opt, global_step, video, name):
 
@@ -39,4 +45,8 @@ class TensorboardSummary(object):
 
     def visualize_image(self, opt, global_step, ןimages, name):
         grid_image = make_grid(ןimages[:3, :, :, :].clone().cpu().data, 3, normalize=True)
-        self.writer.add_image('Image/Scale {}/{}'.format(opt.scale_idx, name), grid_image, global_step)
+        img_name = 'Image/Scale {}/{}'.format(opt.scale_idx, name)
+        if self.neptune_exp:
+            self.neptune_exp.log_image(img_name, global_step, y=self.to_image(grid_image))
+        else:
+            self.writer.add_image(img_name, grid_image, global_step)

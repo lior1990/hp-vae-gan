@@ -7,6 +7,8 @@ import utils
 import random
 import os
 
+import neptune
+
 from utils import logger, tools
 import logging
 import colorama
@@ -25,6 +27,13 @@ clear = colorama.Style.RESET_ALL
 blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
 green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
+
+use_neptune = True
+try:
+    neptune.init(project_qualified_name='lior.tau/ff-singan')
+except Exception as e:
+    print(e)
+    use_neptune = False
 
 
 def train(opt, netG):
@@ -220,7 +229,6 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
@@ -334,7 +342,12 @@ if __name__ == '__main__':
     opt.saver = utils.ImageSaver(opt)
 
     # Define Tensorboard Summary
-    opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir)
+    if use_neptune:
+        neptune_exp = neptune.create_experiment(name=opt.checkname, params=opt.__dict__).__enter__()
+        opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir, neptune_exp=neptune_exp)
+    else:
+        opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir)
+
     logger.configure_logging(os.path.abspath(os.path.join(opt.saver.experiment_dir, 'logbook.txt')))
 
     # CUDA
@@ -377,7 +390,7 @@ if __name__ == '__main__':
                              shuffle=True,
                              drop_last=True,
                              batch_size=opt.batch_size,
-                             num_workers=4)
+                             num_workers=0)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale
@@ -426,3 +439,6 @@ if __name__ == '__main__':
 
         # Increase scale
         opt.scale_idx += 1
+
+    if use_neptune:
+        neptune_exp.__exit__(None, None, None)
