@@ -156,17 +156,6 @@ def train(opt, netG):
             generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
             applied_noise = 0
 
-        # diversity loss
-        diversity_noise = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
-
-        diversity_generated = G_curr(real_zero, opt.Noise_Amps, mode="rand", noise_init=diversity_noise)[0]
-
-        lz = torch.mean(torch.abs(generated - diversity_generated)) / torch.mean(torch.abs(applied_noise - diversity_noise))
-        eps = 1 * 1e-5
-        diversity_loss = 1 / (lz + eps)
-
-        total_loss += diversity_loss * opt.diversity_loss_weight
-
         ############################
         # (2) Update D network: maximize D(x) + D(G(z))
         ###########################
@@ -195,9 +184,18 @@ def train(opt, netG):
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            vae_loss = opt.rec_weight * rec_vae_loss
 
-            total_loss += vae_loss
+            # diversity loss
+            diversity_noise = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
+
+            diversity_generated = G_curr(real_zero, opt.Noise_Amps, mode="rand", noise_init=diversity_noise)[0]
+
+            lz = torch.mean(torch.abs(generated - diversity_generated)) / torch.mean(
+                torch.abs(applied_noise - diversity_noise))
+            eps = 1 * 1e-5
+            diversity_loss = 1 / (lz + eps)
+
+            total_loss += diversity_loss * opt.diversity_loss_weight + opt.rec_weight * rec_vae_loss
         else:
             ############################
             # (3) Update G network: maximize D(G(z))
