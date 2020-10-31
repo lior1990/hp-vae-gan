@@ -149,12 +149,7 @@ def train(opt, netG):
         total_loss = 0
 
         # original code
-        if opt.noisy_reconstruction:
-            applied_noise = noise_init * opt.diversity_noise_weight
-            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec", noise_init=applied_noise)
-        else:
-            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
-            applied_noise = 0
+        generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         ############################
         # (2) Update D network: maximize D(x) + D(G(z))
@@ -186,12 +181,16 @@ def train(opt, netG):
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
 
             # diversity loss
-            diversity_noise = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
+            noise1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
+            noise2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
 
-            diversity_generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rand", noise_init=diversity_noise)[1]
+            real_zero_pair = torch.cat([real_zero, real_zero], dim=0)
+            noise_pair = torch.cat([noise1, noise2], dim=0)
 
-            lz = torch.mean(torch.abs(generated_vae - diversity_generated_vae)) / torch.mean(
-                torch.abs(applied_noise - diversity_noise))
+            rand_generated_vae_pair = G_curr(real_zero_pair, opt.Noise_Amps, mode="rand", noise_init=noise_pair)[1]
+            generated_vae1, generated_vae2 = torch.split(rand_generated_vae_pair, real.size(0), dim=0)
+
+            lz = torch.mean(torch.abs(generated_vae2 - generated_vae1)) / torch.mean(torch.abs(noise2 - noise1))
             eps = 1 * 1e-5
             diversity_loss = 1 / (lz + eps)
 
