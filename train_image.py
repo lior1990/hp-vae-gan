@@ -150,8 +150,8 @@ def train(opt, netG):
 
         # original code
         if opt.noisy_reconstruction:
-            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec", noise_init=noise_init)
-            applied_noise = noise_init
+            applied_noise = noise_init * opt.diversity_noise_weight
+            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec", noise_init=applied_noise)
         else:
             generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
             applied_noise = 0
@@ -169,7 +169,7 @@ def train(opt, netG):
 
         # train with fake
         #################
-        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init * opt.diversity_noise_weight, mode="rand")
 
         # Train 3D Discriminator
         output = D_curr(fake.detach())
@@ -188,9 +188,9 @@ def train(opt, netG):
             # diversity loss
             diversity_noise = utils.generate_noise(size=opt.Z_init_size, device=opt.device) * opt.diversity_noise_weight
 
-            diversity_generated = G_curr(real_zero, opt.Noise_Amps, mode="rand", noise_init=diversity_noise)[0]
+            diversity_generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rand", noise_init=diversity_noise)[1]
 
-            lz = torch.mean(torch.abs(generated - diversity_generated)) / torch.mean(
+            lz = torch.mean(torch.abs(generated_vae - diversity_generated_vae)) / torch.mean(
                 torch.abs(applied_noise - diversity_noise))
             eps = 1 * 1e-5
             diversity_loss = 1 / (lz + eps)
@@ -226,20 +226,21 @@ def train(opt, netG):
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/diversity_loss'.format(opt.scale_idx), diversity_loss.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/diversity_loss'.format(opt.scale_idx), diversity_loss.item(),
+                                       iteration)
 
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
                     fake_var = []
                     fake_vae_var = []
                     for _ in range(3):
-                        noise_init = utils.generate_noise(ref=noise_init)
+                        noise_init = utils.generate_noise(ref=noise_init) * opt.diversity_noise_weight
                         fake, fake_vae = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
