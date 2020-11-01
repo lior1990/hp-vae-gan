@@ -155,14 +155,19 @@ def train(opt, netG):
         real_zero_pair = torch.cat([real_zero, real_zero], dim=0)
         noise_pair = torch.cat([noise1, noise2], dim=0)
 
-        rand_generated_pair = G_curr(real_zero_pair, opt.Noise_Amps, mode="rand", noise_init=noise_pair)[0]
-        generated1, generated2 = torch.split(rand_generated_pair, real.size(0), dim=0)
+        _, rand_generated_vae_pair, rand_z_vae_pair = G_curr(real_zero_pair, opt.Noise_Amps, mode="rand", noise_init=noise_pair)
+        generated_vae1, generated_vae2 = torch.split(rand_generated_vae_pair, real.size(0), dim=0)
 
-        lz = torch.mean(torch.abs(generated2 - generated1)) / torch.mean(torch.abs(noise2 - noise1))
+        lz = torch.mean(torch.abs(generated_vae2 - generated_vae1)) / torch.mean(torch.abs(noise2 - noise1))
         eps = 1 * 1e-5
         diversity_loss = 1 / (lz + eps)
 
         total_loss += diversity_loss * opt.diversity_loss_weight
+
+        # consistency loss
+        generated_vae_z_vae = G_curr(rand_generated_vae_pair, opt.Noise_Amps, mode="rec")[2]
+        consistency_loss = torch.mean(torch.abs(generated_vae_z_vae - rand_z_vae_pair))
+        total_loss += consistency_loss
 
         ############################
         # (2) Update D network: maximize D(x) + D(G(z))
@@ -177,7 +182,7 @@ def train(opt, netG):
 
         # train with fake
         #################
-        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+        fake, _, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
         # Train 3D Discriminator
         output = D_curr(fake.detach())
@@ -190,9 +195,9 @@ def train(opt, netG):
 
         # original code
         if opt.noisy_reconstruction:
-            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec", noise_init=noise_init)
+            generated, generated_vae, z_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec", noise_init=noise_init)
         else:
-            generated, generated_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+            generated, generated_vae, z_vae = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         errG_total = 0
 
@@ -234,6 +239,7 @@ def train(opt, netG):
             opt.summary.add_scalar('Video/Scale {}/diversity_loss'.format(opt.scale_idx), diversity_loss.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
+            opt.summary.add_scalar('Video/Scale {}/consistency_loss'.format(opt.scale_idx), consistency_loss.item(), iteration)
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
             else:
@@ -245,7 +251,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)

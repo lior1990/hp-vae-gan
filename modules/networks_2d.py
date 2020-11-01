@@ -250,7 +250,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
 
-        return x_prev_out, vae_out
+        return x_prev_out, vae_out, z_vae
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
