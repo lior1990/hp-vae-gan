@@ -167,7 +167,7 @@ def train(opt, netG):
         # consistency loss
         generated_vae_z_vae = G_curr(rand_generated_vae_pair, opt.Noise_Amps, mode="rec")[2]
         consistency_loss = torch.mean(torch.abs(generated_vae_z_vae - rand_z_vae_pair))
-        total_loss += consistency_loss
+        total_loss += consistency_loss * opt.consistency_loss_weight
 
         ############################
         # (2) Update D network: maximize D(x) + D(G(z))
@@ -318,6 +318,7 @@ if __name__ == '__main__':
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--diversity-loss-weight', type=float, default=1.0, help='diversity loss weight')
     parser.add_argument('--diversity-noise-weight', type=float, default=0.5, help='diversity noise weight')
+    parser.add_argument('--consistency-loss-weight', type=float, default=1, help='consistency loss weight')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
