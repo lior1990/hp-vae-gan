@@ -165,7 +165,7 @@ def train(opt, netG):
         total_loss += diversity_loss * opt.diversity_loss_weight
 
         # consistency loss
-        generated_vae_z_vae = G_curr(rand_generated_vae_pair, opt.Noise_Amps, mode="rec")[2]
+        generated_vae_z_vae = G_curr(rand_generated_vae_pair.detach(), opt.Noise_Amps, mode="rec")[2]
         consistency_loss = torch.mean(torch.abs(generated_vae_z_vae - rand_z_vae_pair))
         total_loss += consistency_loss * opt.consistency_loss_weight
 
