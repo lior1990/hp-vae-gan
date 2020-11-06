@@ -63,7 +63,9 @@ def train(opt, netG):
         else:
             # VAE
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+                               {"params": netG.decoder_head.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.decoder_base.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.decoder_tail.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
             parameter_list += [
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
@@ -135,7 +137,7 @@ def train(opt, netG):
             real_zero = real
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [int(initial_size * opt.ar), initial_size]
+        initial_size = [3, 5]
         opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
 
         noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
@@ -164,12 +166,11 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, (mu, logvar) = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            kl_loss = kl_criterion(mu, logvar)
-            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss
+            vae_loss = opt.rec_weight * rec_vae_loss
 
             total_loss += vae_loss
         else:
@@ -186,7 +187,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(noise_init, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -225,11 +226,8 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
-                opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
-            else:
-                opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
             if opt.vae_levels < opt.scale_idx + 1:
+                opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
@@ -242,7 +240,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae = G_curr(noise_init, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)
@@ -347,6 +345,7 @@ if __name__ == '__main__':
         neptune_exp = neptune.create_experiment(name=opt.checkname, params=opt.__dict__, tags=[opt.tag]).__enter__()
         opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir, neptune_exp=neptune_exp)
     else:
+        use_neptune = False
         opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir)
 
     logger.configure_logging(os.path.abspath(os.path.join(opt.saver.experiment_dir, 'logbook.txt')))

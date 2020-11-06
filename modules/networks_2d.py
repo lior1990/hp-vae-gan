@@ -90,6 +90,26 @@ class FeatureExtractor(nn.Sequential):
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
 
 
+class Encode2DAE(nn.Module):
+    def __init__(self, opt, out_dim=None, num_blocks=2):
+        super(Encode2DAE, self).__init__()
+
+        if out_dim is None:
+            output_dim = opt.nfc
+        else:
+            assert type(out_dim) is int
+            output_dim = out_dim
+
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 2, num_blocks=num_blocks)
+        self.encoder = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1)
+
+    def forward(self, x):
+        features = self.features(x)
+        encoder = self.encoder(features)
+
+        return encoder
+
+
 class Encode2DVAE(nn.Module):
     def __init__(self, opt, out_dim=None, num_blocks=2):
         super(Encode2DVAE, self).__init__()
@@ -185,6 +205,21 @@ class WDiscriminator2D(nn.Module):
         return out
 
 
+class Conv2DTranspose(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=2, padding=1, act='lrelu'):
+        super(Conv2DTranspose, self).__init__()
+        self.trans = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding)
+
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.activation = get_activation(act)
+
+    def forward(self, x, output_size=None):
+        x = self.trans(x, output_size=output_size)
+        x = self.bn(x)
+        x = self.activation(x)
+        return x
+
+
 class GeneratorHPVAEGAN(nn.Module):
     def __init__(self, opt):
         super(GeneratorHPVAEGAN, self).__init__()
@@ -193,22 +228,18 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
-        self.decoder = nn.Sequential()
+        self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1))
-        for i in range(opt.num_layer):
-            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
-            self.decoder.add_module('block%d' % (i), block)
-        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
-
-        # 1x1 Decoder
-        # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, 1, 0, stride=1))
+        # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=2))
         # for i in range(opt.num_layer):
-        #     block = ConvBlock2D(N, N, 1, 0, stride=1)
+        #     block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=2)
         #     self.decoder.add_module('block%d' % (i), block)
-        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, 1, 1, 0))
+        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 2, opt.ker_size // 2))
+
+        self.decoder_head = Conv2DTranspose(opt.latent_dim, N, opt.ker_size, 2, opt.padd_size)
+        self.decoder_base = Conv2DTranspose(N, N, opt.ker_size, 2, opt.padd_size)
+        self.decoder_tail = nn.ConvTranspose2d(N, opt.nc_im, opt.ker_size, 2, opt.padd_size)
 
         self.body = torch.nn.ModuleList([])
 
@@ -231,23 +262,23 @@ class GeneratorHPVAEGAN(nn.Module):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        if noise_init is None:
-            mu, logvar = self.encode(video)
-            z_vae = reparameterize(mu, logvar, self.training)
-        else:
-            z_vae = noise_init
+        z_ae = self.encode(video)
 
-        vae_out = torch.tanh(self.decoder(z_vae))
+        if noise_init is not None:
+            z_ae += noise_init
+
+        # decode
+        vae_out = self.decoder_head(z_ae, output_size=(6, 9))
+        vae_out = self.decoder_base(vae_out, output_size=(11, 17))
+        vae_out = self.decoder_tail(vae_out, output_size=(22, 33))
+        vae_out = torch.tanh(vae_out)
 
         if sample_init is not None:
             x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
         else:
             x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
 
-        if noise_init is None:
-            return x_prev_out, vae_out, (mu, logvar)
-        else:
-            return x_prev_out, vae_out
+        return x_prev_out, vae_out, z_ae
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
