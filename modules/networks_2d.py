@@ -62,7 +62,7 @@ class ConvBlock2D(nn.Sequential):
 
 
 class ConvBlock2DSN(nn.Sequential):
-    def __init__(self, in_channel, out_channel, ker_size, padding, stride, bn=True, act='lrelu'):
+    def __init__(self, in_channel, out_channel, ker_size, padding, stride, bn=True, act='lrelu', pooling=False):
         super(ConvBlock2DSN, self).__init__()
         if bn:
             self.add_module('conv', nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
@@ -74,14 +74,17 @@ class ConvBlock2DSN(nn.Sequential):
         if act is not None:
             self.add_module(act, get_activation(act))
 
+        if pooling:
+            self.add_module("avg_pool", nn.AvgPool2d(ker_size))
+
 
 class FeatureExtractor(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size, padding, stride, num_blocks=2, return_linear=False):
         super(FeatureExtractor, self).__init__()
-        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride)),
+        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride, pooling=True)),
         for i in range(num_blocks - 1):
             self.add_module('conv_block_{}'.format(i + 1),
-                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
+                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride, pooling=True))
         if return_linear:
             self.add_module('conv_block_{}'.format(num_blocks),
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride, bn=False, act=None))
@@ -100,7 +103,7 @@ class Encode2DAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 2, num_blocks=num_blocks)
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.encoder = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1)
 
     def forward(self, x):
@@ -220,6 +223,18 @@ class Conv2DTranspose(nn.Module):
         return x
 
 
+class Conv2DUpsample(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=2, padding=1, **kwargs):
+        super(Conv2DUpsample, self).__init__()
+        self.conv = ConvBlock2D(in_channels, out_channels, kernel_size, padding, stride)
+        self.up = nn.Upsample(**kwargs)
+
+    def forward(self, x):
+        x = self.up(x)
+        x = self.conv(x)
+        return x
+
+
 class GeneratorHPVAEGAN(nn.Module):
     def __init__(self, opt):
         super(GeneratorHPVAEGAN, self).__init__()
@@ -237,9 +252,9 @@ class GeneratorHPVAEGAN(nn.Module):
         #     self.decoder.add_module('block%d' % (i), block)
         # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 2, opt.ker_size // 2))
 
-        self.decoder_head = Conv2DTranspose(opt.latent_dim, N, opt.ker_size, 2, opt.padd_size)
-        self.decoder_base = Conv2DTranspose(N, N, opt.ker_size, 2, opt.padd_size)
-        self.decoder_tail = nn.ConvTranspose2d(N, opt.nc_im, opt.ker_size, 2, opt.padd_size)
+        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
+        self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
+        self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
 
         self.body = torch.nn.ModuleList([])
 
@@ -268,9 +283,9 @@ class GeneratorHPVAEGAN(nn.Module):
             z_ae += noise_init
 
         # decode
-        vae_out = self.decoder_head(z_ae, output_size=(6, 9))
-        vae_out = self.decoder_base(vae_out, output_size=(11, 17))
-        vae_out = self.decoder_tail(vae_out, output_size=(22, 33))
+        vae_out = self.decoder_head(z_ae)
+        vae_out = self.decoder_base(vae_out)
+        vae_out = self.decoder_tail(vae_out)
         vae_out = torch.tanh(vae_out)
 
         if sample_init is not None:

@@ -137,7 +137,7 @@ def train(opt, netG):
             real_zero = real
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [3, 5]
+        initial_size = [7, 11]
         opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
 
         noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
