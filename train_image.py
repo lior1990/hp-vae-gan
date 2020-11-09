@@ -203,6 +203,22 @@ def train(opt, netG):
             ###########################
             errG_total = 0
             rec_loss = opt.rec_loss(generated, real)
+
+            # diversity loss
+            noise1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
+            noise2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
+
+            real_zero_pair = torch.cat([real_zero, real_zero], dim=0)
+            noise_pair = torch.cat([noise1, noise2], dim=0)
+
+            rand_generated_pair = G_curr(real_zero_pair, opt.Noise_Amps, mode="rec", noise_init=noise_pair)[0]
+            generated1, generated2 = torch.split(rand_generated_pair, real.size(0), dim=0)
+
+            lz = torch.mean(torch.abs(generated2 - generated1)) / torch.mean(torch.abs(noise2 - noise1))
+            eps = 1 * 1e-5
+            diversity_loss = 1 / (lz + eps)
+            errG_total += diversity_loss * opt.diversity_loss_weight
+
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
@@ -230,6 +246,7 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/diversity_loss'.format(opt.scale_idx), diversity_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
@@ -305,6 +322,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda-grad', type=float, default=0.1, help='gradient penelty weight')
     parser.add_argument('--rec-weight', type=float, default=10., help='reconstruction loss weight')
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
+    parser.add_argument('--diversity-loss-weight', type=float, default=1., help='diversity loss weight')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
