@@ -204,7 +204,10 @@ def train(opt, netG):
             errG_total = 0
             rec_loss = opt.rec_loss(generated, real)
 
-            should_calc_diversity_loss = opt.diversity_start_scale < opt.scale_idx
+            should_calc_diversity_loss = False
+
+            if opt.diversity_start_scale < opt.scale_idx:
+                should_calc_diversity_loss = (opt.scale_idx - opt.diversity_start_scale) <= opt.diversity_total_scales
 
             if should_calc_diversity_loss:
                 # diversity loss
@@ -328,6 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
     parser.add_argument('--diversity-loss-weight', type=float, default=1., help='diversity loss weight')
     parser.add_argument('--diversity-start-scale', type=int, default=4, help='diversity start scale')
+    parser.add_argument('--diversity-total-scales', type=int, default=2, help='Number of scales to use diversity loss')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
