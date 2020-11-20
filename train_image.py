@@ -60,6 +60,8 @@ def train(opt, netG):
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-train_depth:])]
+            # use encoder in all scales
+            parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
         else:
             # VAE
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -202,7 +204,7 @@ def train(opt, netG):
             # (3) Update G network: maximize D(G(z))
             ###########################
             errG_total = 0
-            rec_loss = opt.rec_loss(generated, real)
+            rec_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
 
             should_calc_diversity_loss = False
 
