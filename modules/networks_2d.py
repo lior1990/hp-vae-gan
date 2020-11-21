@@ -297,8 +297,8 @@ class GeneratorHPVAEGAN(nn.Module):
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
-            if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
-                x_prev_out.detach_()
+            #if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
+                #x_prev_out.detach_()
 
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)

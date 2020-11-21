@@ -27,10 +27,10 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
 def optimize_encoder(opt, netG):
-    parameter_list = [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
-    # set everything else to requires_grad = False
+    for p in netG.encode.parameters():
+        p.requires_grad = True
 
-    optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
+    optimizerG = optim.Adam(netG.encode.parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
     if opt.device == 'cuda':
