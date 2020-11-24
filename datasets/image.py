@@ -92,7 +92,7 @@ class SingleImageDataset(ImageDataset):
 
 
 class MultipleImageDataset(ImageDataset):
-    def __init__(self, opt, transforms=None):
+    def __init__(self, opt, transforms=None, exclude_image_path=None):
         super(MultipleImageDataset, self).__init__(opt, transforms=transforms)
 
         if not (os.path.exists(opt.image_path) and os.path.isdir(opt.image_path)):
@@ -101,6 +101,8 @@ class MultipleImageDataset(ImageDataset):
 
         self.images = []
         for img_path in os.listdir(opt.image_path):
+            if img_path == exclude_image_path:
+                continue
             image_full_scale = imageio.imread(os.path.join(opt.image_path, img_path))[:, :, :3]
             self.images.append(image_full_scale)
 

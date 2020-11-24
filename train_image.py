@@ -8,7 +8,7 @@ import random
 import os
 
 import neptune
-
+import random
 from utils import logger, tools
 import logging
 import colorama
@@ -36,7 +36,7 @@ except Exception as e:
     use_neptune = False
 
 
-def train(opt, netG):
+def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
@@ -86,21 +86,8 @@ def train(opt, netG):
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-opt.train_depth:])]
 
-    # if opt.vae_levels < opt.scale_idx + 1:
-    #     train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
-    #     parameter_list += [
-    #         {"params": block.parameters(), "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
-    #         for idx, block in enumerate(netG.body[-train_depth:])]
-    # else:
-    #     # VAE
-    #     parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-    #                        {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
-    #     parameter_list += [
-    #         {"params": block.parameters(),
-    #          "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
-    #         for idx, block in enumerate(netG.body[-opt.train_depth:])]
-
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
+    optimizerG_encoder_only = optim.Adam(netG.encode.parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
     if opt.device == 'cuda':
@@ -121,7 +108,15 @@ def train(opt, netG):
     }
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
-    iterator = iter(data_loader)
+    iterator = iter(train_data_loader)
+    loo_real_data = next(iter(loo_data_loader))
+    if opt.scale_idx > 0:
+        loo_real, loo_real_zero = loo_real_data
+        loo_real = loo_real.to(opt.device)
+        loo_real_zero = loo_real_zero.to(opt.device)
+    else:
+        loo_real = loo_real_data.to(opt.device)
+        loo_real_zero = loo_real
 
     for iteration in epoch_iterator:
         try:
@@ -241,6 +236,20 @@ def train(opt, netG):
         torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
         optimizerG.step()
 
+        # LOO
+        loo_generated, loo_generated_vae, _ = G_curr(loo_real_zero, opt.Noise_Amps, mode="rec")
+
+        loo_rec_vae_loss = opt.rec_loss(loo_generated_vae, loo_real_zero)
+        loo_rec_loss = opt.rec_loss(loo_generated, loo_real)
+        loo_total_loss = opt.rec_weight * (loo_rec_vae_loss + loo_rec_loss)
+
+        G_curr.zero_grad()
+        loo_total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
+        optimizerG_encoder_only.step()
+
+        ####
+
         # Update progress bar
         epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}]'.format(
             opt.scale_idx + 1, opt.stop_scale + 1,
@@ -248,6 +257,7 @@ def train(opt, netG):
         ))
 
         if opt.visualize:
+            iteration = outer_iter_index * opt.niter + iteration
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.vae_levels < opt.scale_idx + 1:
@@ -259,6 +269,10 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
+
+            # loo
+            opt.summary.add_scalar('Video/Scale {}/LOO Rec VAE'.format(opt.scale_idx), loo_rec_vae_loss.item(), iteration)
+            opt.summary.add_scalar('Video/Scale {}/LOO Rec'.format(opt.scale_idx), loo_rec_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
@@ -277,6 +291,9 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, generated_vae, 'Generated VAE')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
                 opt.summary.visualize_image(opt, iteration, fake_vae_var, 'Fake VAE var')
+                opt.summary.visualize_image(opt, iteration, loo_real, 'LOO Real')
+                opt.summary.visualize_image(opt, iteration, loo_generated, 'LOO Generated')
+                opt.summary.visualize_image(opt, iteration, loo_generated_vae, 'LOO Generated VAE')
 
     epoch_iterator.close()
 
@@ -408,24 +425,11 @@ if __name__ == '__main__':
     opt.Noise_Amps = []
 
     # Date
-    if os.path.isdir(opt.image_path):
-        dataset = MultipleImageDataset(opt)
-    elif os.path.isfile(opt.image_path):
-        dataset = SingleImageDataset(opt)
-    else:
-        raise NotImplementedError
-
-    data_loader = DataLoader(dataset,
-                             shuffle=True,
-                             drop_last=True,
-                             batch_size=opt.batch_size,
-                             num_workers=0)
+    assert os.path.isdir(opt.image_path)
+    imgs = os.listdir(opt.image_path)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale
-
-    opt.dataset = dataset
-    opt.data_loader = data_loader
 
     with logger.LoggingBlock("Commandline Arguments", emph=True):
         for argument, value in sorted(vars(opt).items()):
@@ -464,7 +468,26 @@ if __name__ == '__main__':
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
             netG.init_next_stage()
-        train(opt, netG)
+
+        for i in range(len(imgs)):
+            rand_loo_idx = i  # random.randint(0, len(imgs))
+            train_dataset = MultipleImageDataset(opt, exclude_image_path=imgs[rand_loo_idx])
+            old_image_path = opt.image_path
+            opt.image_path = os.path.join(opt.image_path, imgs[rand_loo_idx])
+            loo_dataset = SingleImageDataset(opt)
+            opt.image_path = old_image_path
+
+            train_data_loader = DataLoader(train_dataset,
+                                           shuffle=True,
+                                           drop_last=True,
+                                           batch_size=opt.batch_size,
+                                           num_workers=0)
+            loo_data_loader = DataLoader(loo_dataset,
+                                         shuffle=False,
+                                         drop_last=True,
+                                         batch_size=1,
+                                         num_workers=0)
+            train(opt, netG, train_data_loader, loo_data_loader, i)
 
         # Increase scale
         opt.scale_idx += 1
