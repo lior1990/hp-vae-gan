@@ -562,7 +562,7 @@ if __name__ == '__main__':
                                           batch_size=opt.batch_size,
                                           num_workers=0
                                           )
-            train_loo(opt, netG, train_data_loader, i)
+            train_loo(opt, netG, full_data_loader, i)
 
         # Increase scale
         opt.scale_idx += 1
