@@ -24,8 +24,8 @@ def weights_init(m):
 
 def get_activation(act):
     activations = {
-        "relu": nn.ReLU(inplace=True),
-        "lrelu": nn.LeakyReLU(0.2, inplace=True),
+        "relu": nn.ReLU(),
+        "lrelu": nn.LeakyReLU(0.2),
         "elu": nn.ELU(alpha=1.0, inplace=True),
         "prelu": nn.PReLU(num_parameters=1, init=0.25),
         "selu": nn.SELU(inplace=True)

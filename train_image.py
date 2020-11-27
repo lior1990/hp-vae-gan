@@ -36,7 +36,7 @@ except Exception as e:
     use_neptune = False
 
 
-def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
+def train(opt, netG, train_data_loader, outer_iter_index):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
@@ -87,7 +87,6 @@ def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
                 for idx, block in enumerate(netG.body[-opt.train_depth:])]
 
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
-    optimizerG_encoder_only = optim.Adam(netG.encode.parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
     if opt.device == 'cuda':
@@ -109,20 +108,12 @@ def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
     iterator = iter(train_data_loader)
-    loo_real_data = next(iter(loo_data_loader))
-    if opt.scale_idx > 0:
-        loo_real, loo_real_zero = loo_real_data
-        loo_real = loo_real.to(opt.device)
-        loo_real_zero = loo_real_zero.to(opt.device)
-    else:
-        loo_real = loo_real_data.to(opt.device)
-        loo_real_zero = loo_real
 
     for iteration in epoch_iterator:
         try:
             data = next(iterator)
         except StopIteration:
-            iterator = iter(opt.data_loader)
+            iterator = iter(train_data_loader)
             data = next(iterator)
 
         if opt.scale_idx > 0:
@@ -236,20 +227,6 @@ def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
         torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
         optimizerG.step()
 
-        # LOO
-        loo_generated, loo_generated_vae, _ = G_curr(loo_real_zero, opt.Noise_Amps, mode="rec")
-
-        loo_rec_vae_loss = opt.rec_loss(loo_generated_vae, loo_real_zero)
-        loo_rec_loss = opt.rec_loss(loo_generated, loo_real)
-        loo_total_loss = opt.rec_weight * (loo_rec_vae_loss + loo_rec_loss)
-
-        G_curr.zero_grad()
-        loo_total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
-        optimizerG_encoder_only.step()
-
-        ####
-
         # Update progress bar
         epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}]'.format(
             opt.scale_idx + 1, opt.stop_scale + 1,
@@ -270,10 +247,6 @@ def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
 
-            # loo
-            opt.summary.add_scalar('Video/Scale {}/LOO Rec VAE'.format(opt.scale_idx), loo_rec_vae_loss.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/LOO Rec'.format(opt.scale_idx), loo_rec_loss.item(), iteration)
-
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
                     fake_var = []
@@ -291,9 +264,6 @@ def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
                 opt.summary.visualize_image(opt, iteration, generated_vae, 'Generated VAE')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
                 opt.summary.visualize_image(opt, iteration, fake_vae_var, 'Fake VAE var')
-                opt.summary.visualize_image(opt, iteration, loo_real, 'LOO Real')
-                opt.summary.visualize_image(opt, iteration, loo_generated, 'LOO Generated')
-                opt.summary.visualize_image(opt, iteration, loo_generated_vae, 'LOO Generated VAE')
 
     epoch_iterator.close()
 
@@ -311,6 +281,105 @@ def train(opt, netG, train_data_loader, loo_data_loader, outer_iter_index):
             'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
+
+
+def train_loo(opt, netG, data_loader, outer_iter_index):
+    optimizerG_encoder_only = optim.Adam(netG.encode.parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
+
+    # Parallel
+    if opt.device == 'cuda':
+        G_curr = torch.nn.DataParallel(netG)
+    else:
+        G_curr = netG
+
+    progressbar_args = {
+        "iterable": range(opt.niter),
+        "desc": "Training scale [{}/{}]".format(opt.scale_idx + 1, opt.stop_scale + 1),
+        "train": True,
+        "offset": 0,
+        "logging_on_update": False,
+        "logging_on_close": True,
+        "postfix": True
+    }
+    epoch_iterator = tools.create_progressbar(**progressbar_args)
+
+    iterator = iter(data_loader)
+
+    for iteration in epoch_iterator:
+        try:
+            data = next(iterator)
+        except StopIteration:
+            iterator = iter(data_loader)
+            data = next(iterator)
+
+        if opt.scale_idx > 0:
+            real, real_zero = data
+            real = real.to(opt.device)
+            real_zero = real_zero.to(opt.device)
+        else:
+            real = data.to(opt.device)
+            real_zero = real
+
+        initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
+        initial_size = [7, 11]
+        opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
+
+        noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
+
+        # LOO
+        loo_generated, loo_generated_vae, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+
+        loo_rec_vae_loss = opt.rec_loss(loo_generated_vae, real_zero)
+        loo_rec_loss = opt.rec_loss(loo_generated, real)
+        loo_total_loss = opt.rec_weight * (loo_rec_vae_loss + loo_rec_loss)
+
+        G_curr.zero_grad()
+        loo_total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
+        optimizerG_encoder_only.step()
+        G_curr.zero_grad()
+
+        ####
+
+        # Update progress bar
+        epoch_iterator.set_description('Scale [{}/{}], LOO Iteration [{}/{}]'.format(
+            opt.scale_idx + 1, opt.stop_scale + 1,
+            iteration + 1, opt.niter,
+        ))
+
+        if opt.visualize:
+            iteration = outer_iter_index * opt.niter + iteration
+            # Tensorboard
+            opt.summary.add_scalar('Video/Scale {}/LOO Rec VAE'.format(opt.scale_idx), loo_rec_vae_loss.item(), iteration)
+            opt.summary.add_scalar('Video/Scale {}/LOO Rec'.format(opt.scale_idx), loo_rec_loss.item(), iteration)
+
+            if iteration % opt.print_interval == 0:
+                with torch.no_grad():
+                    fake_var = []
+                    fake_vae_var = []
+                    for _ in range(3):
+                        noise_init = utils.generate_noise(ref=noise_init)
+                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake_var.append(fake)
+                        fake_vae_var.append(fake_vae)
+                    fake_var = torch.cat(fake_var, dim=0)
+                    fake_vae_var = torch.cat(fake_vae_var, dim=0)
+
+                opt.summary.visualize_image(opt, iteration, real, 'LOO Real')
+                opt.summary.visualize_image(opt, iteration, loo_generated, 'LOO Generated')
+                opt.summary.visualize_image(opt, iteration, loo_generated_vae, 'LOO Generated VAE')
+                opt.summary.visualize_image(opt, iteration, fake_var, 'LOO Fake var')
+                opt.summary.visualize_image(opt, iteration, fake_vae_var, 'LOO Fake VAE var')
+
+    epoch_iterator.close()
+
+    # Save data
+    opt.saver.save_checkpoint({
+        'scale': opt.scale_idx,
+        'state_dict': netG.state_dict(),
+        'optimizer': optimizerG_encoder_only.state_dict(),
+        'noise_amps': opt.Noise_Amps,
+    }, 'netG.pth')
 
 
 if __name__ == '__main__':
@@ -465,6 +534,8 @@ if __name__ == '__main__':
     else:
         opt.resumed_idx = -1
 
+    full_dataset = MultipleImageDataset(opt)
+
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
             netG.init_next_stage()
@@ -482,12 +553,16 @@ if __name__ == '__main__':
                                            drop_last=True,
                                            batch_size=opt.batch_size,
                                            num_workers=0)
-            loo_data_loader = DataLoader(loo_dataset,
-                                         shuffle=False,
-                                         drop_last=True,
-                                         batch_size=1,
-                                         num_workers=0)
-            train(opt, netG, train_data_loader, loo_data_loader, i)
+
+            train(opt, netG, train_data_loader, i)
+
+            full_data_loader = DataLoader(full_dataset,
+                                          shuffle=False,
+                                          drop_last=True,
+                                          batch_size=opt.batch_size,
+                                          num_workers=0
+                                          )
+            train_loo(opt, netG, train_data_loader, i)
 
         # Increase scale
         opt.scale_idx += 1
