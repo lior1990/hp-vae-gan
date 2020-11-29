@@ -281,9 +281,13 @@ def train(opt, netG, train_data_loader, outer_iter_index):
             'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
+        return D_curr
 
 
-def train_loo(opt, netG, data_loader, outer_iter_index):
+def train_loo(opt, netG, data_loader, outer_iter_index, D_curr=None):
+    if D_curr is not None:
+        D_curr.requires_grad_(False)
+
     optimizerG_encoder_only = optim.Adam(netG.encode.parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
@@ -332,6 +336,11 @@ def train_loo(opt, netG, data_loader, outer_iter_index):
         loo_rec_vae_loss = opt.rec_loss(loo_generated_vae, real_zero)
         loo_rec_loss = opt.rec_loss(loo_generated, real)
         loo_total_loss = opt.rec_weight * (loo_rec_vae_loss + loo_rec_loss)
+
+        if D_curr is not None:
+            output = D_curr(loo_generated)
+            errG = -output.mean() * opt.disc_loss_weight
+            loo_total_loss += errG
 
         G_curr.zero_grad()
         loo_total_loss.backward()
@@ -554,7 +563,7 @@ if __name__ == '__main__':
                                            batch_size=opt.batch_size,
                                            num_workers=0)
 
-            train(opt, netG, train_data_loader, i)
+            D_curr = train(opt, netG, train_data_loader, i)
 
             full_data_loader = DataLoader(full_dataset,
                                           shuffle=False,
@@ -562,7 +571,7 @@ if __name__ == '__main__':
                                           batch_size=opt.batch_size,
                                           num_workers=0
                                           )
-            train_loo(opt, netG, full_data_loader, i)
+            train_loo(opt, netG, full_data_loader, i, D_curr)
 
         # Increase scale
         opt.scale_idx += 1
