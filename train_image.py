@@ -36,16 +36,19 @@ except Exception as e:
     use_neptune = False
 
 
-def train(opt, netG, train_data_loader, outer_iter_index):
+def train(opt, netG, train_data_loader, outer_iter_index, D_curr):
     if opt.vae_levels < opt.scale_idx + 1:
-        D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
+        new_d = False
+        if D_curr is None:
+            new_d = True
+            D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
-        if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
-            D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
-        elif opt.vae_levels < opt.scale_idx:
-            D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
+            if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
+                D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+            elif opt.vae_levels < opt.scale_idx:
+                D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
@@ -91,7 +94,7 @@ def train(opt, netG, train_data_loader, outer_iter_index):
     # Parallel
     if opt.device == 'cuda':
         G_curr = torch.nn.DataParallel(netG)
-        if opt.vae_levels < opt.scale_idx + 1:
+        if opt.vae_levels < opt.scale_idx + 1 and new_d:
             D_curr = torch.nn.DataParallel(D_curr)
     else:
         G_curr = netG
@@ -549,6 +552,8 @@ if __name__ == '__main__':
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
             netG.init_next_stage()
 
+        D_curr = None
+
         for i in range(len(imgs)):
             rand_loo_idx = i  # random.randint(0, len(imgs))
             train_dataset = MultipleImageDataset(opt, exclude_image_path=imgs[rand_loo_idx])
@@ -563,7 +568,7 @@ if __name__ == '__main__':
                                            batch_size=opt.batch_size,
                                            num_workers=0)
 
-            D_curr = train(opt, netG, train_data_loader, i)
+            D_curr = train(opt, netG, train_data_loader, i, D_curr)
 
             full_data_loader = DataLoader(full_dataset,
                                           shuffle=False,
