@@ -196,16 +196,22 @@ def train(opt, netGs, encoder, reals, reals_zero):
 
             if opt.visualize:
                 # Tensorboard
-                opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/noise_amp', opt.noise_amp, iteration)
+                opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/noise_amp', opt.noise_amp, iteration)
                 if opt.vae_levels < opt.scale_idx + 1:
-                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/rec loss', rec_loss.item(), iteration)
-                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/errG', errG.item(), iteration)
-                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/errD_fake', errD_fake.item(), iteration)
+                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/rec loss', rec_loss.item(), iteration)
+                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/errG', errG.item(), iteration)
+                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/errD_fake', errD_fake.item(), iteration)
                     if should_calc_diversity_loss:
-                        opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/diversity_loss', diversity_loss.item(), iteration)
-                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/errD_real', errD_real.item(), iteration)
+                        opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/diversity_loss', diversity_loss.item(), iteration)
+                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/errD_real', errD_real.item(), iteration)
                 else:
-                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}{i}/Rec VAE', rec_vae_loss.item(), iteration)
+                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/Rec VAE', rec_vae_loss.item(), iteration)
+
+                with torch.no_grad():
+                    loo_rec = G_curr(loo_z_ae, opt.Noise_Amps, mode="rec")[0]
+                    loo_real = reals[i].unsqueeze(dim=0)
+                    loo_loss = opt.rec_loss(loo_rec, loo_real)
+                    opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/LOO Rec', loo_loss.item(), iteration)
 
                 if iteration % opt.print_interval == 0:
                     with torch.no_grad():
@@ -214,12 +220,12 @@ def train(opt, netGs, encoder, reals, reals_zero):
                         rand_batch = z_ae_curr[rand_indices_to_plot] + noise_init[rand_indices_to_plot]
                         fake_var, fake_vae_var, _ = G_curr(rand_batch, opt.Noise_Amps, mode="rand")
 
-                        loo_rec = G_curr(loo_z_ae, opt.Noise_Amps, mode="rec")[0]
+                        loo_rec_vs_real = torch.cat([loo_rec, loo_real])
 
-                    opt.summary.visualize_image(opt, iteration, loo_rec, f'LOO {i}')
-                    opt.summary.visualize_image(opt, iteration, real, f'Real {i}')
-                    opt.summary.visualize_image(opt, iteration, generated, f'Generated {i}')
-                    opt.summary.visualize_image(opt, iteration, generated_vae, f'Generated VAE {i}')
+                    opt.summary.visualize_image(opt, iteration, loo_rec_vs_real, f'LOO {i}')
+                    opt.summary.visualize_image(opt, iteration, real[rand_indices_to_plot], f'Real {i}')
+                    opt.summary.visualize_image(opt, iteration, generated[rand_indices_to_plot], f'Generated {i}')
+                    opt.summary.visualize_image(opt, iteration, generated_vae[rand_indices_to_plot], f'Generated VAE {i}')
                     opt.summary.visualize_image(opt, iteration, fake_var, f'Fake var {i}')
                     opt.summary.visualize_image(opt, iteration, fake_vae_var, f'Fake VAE var {i}')
 
@@ -248,7 +254,7 @@ def train(opt, netGs, encoder, reals, reals_zero):
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
         'encoder': encoder.state_dict(),
-        'state_dict': netG.state_dict(),
+        'state_dict': {i: netG.state_dict() for i, netG in enumerate(netGs)},
         'optimizer': {i: optimizerG.state_dict() for i, optimizerG in enumerate(optimizerGs)},
         'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
