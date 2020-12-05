@@ -116,7 +116,8 @@ class MultipleImageDataset(ImageDataset):
         opt.ar = h / w  # H2W
 
     def __len__(self):
-        return self.opt.data_rep * self.num_of_images
+        # return self.opt.data_rep * self.num_of_images
+        return self.num_of_images
 
     def _get_image(self, idx):
         return self.images[idx % self.num_of_images]

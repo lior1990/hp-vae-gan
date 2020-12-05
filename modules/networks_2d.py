@@ -243,7 +243,7 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        #self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         # Normal Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=2))
@@ -273,14 +273,14 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, z_ae, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        z_ae = self.encode(video)
-
-        if noise_init is not None:
-            z_ae += noise_init
+        # z_ae = self.encode(video)
+        #
+        # if noise_init is not None:
+        #     z_ae += noise_init
 
         # decode
         vae_out = self.decoder_head(z_ae)
