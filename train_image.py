@@ -209,15 +209,10 @@ def train(opt, netGs, encoder, reals, reals_zero):
 
                 if iteration % opt.print_interval == 0:
                     with torch.no_grad():
-                        fake_var = []
-                        fake_vae_var = []
-                        for _ in range(3):
-                            noise_init = utils.generate_noise(ref=noise_init)
-                            fake, fake_vae, _ = G_curr(z_ae_curr + noise_init, opt.Noise_Amps, mode="rand")
-                            fake_var.append(fake)
-                            fake_vae_var.append(fake_vae)
-                        fake_var = torch.cat(fake_var, dim=0)
-                        fake_vae_var = torch.cat(fake_vae_var, dim=0)
+                        rand_indices_to_plot = [random.randint(0, z_ae_curr.shape[0]-1) for _ in range(3)]
+                        noise_init = utils.generate_noise(ref=noise_init)
+                        rand_batch = z_ae_curr[rand_indices_to_plot] + noise_init[rand_indices_to_plot]
+                        fake_var, fake_vae_var, _ = G_curr(rand_batch, opt.Noise_Amps, mode="rand")
 
                         loo_rec = G_curr(loo_z_ae, opt.Noise_Amps, mode="rec")[0]
 
@@ -567,6 +562,7 @@ if __name__ == '__main__':
         opt.resumed_idx = -1
 
     encoder = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+    encoder = encoder.to(opt.device)
 
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
