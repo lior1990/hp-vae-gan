@@ -85,6 +85,7 @@ def train(opt, netGs, encoder, reals, reals_zero):
         z_ae = encoder(reals_zero)
 
         for i, G_curr in enumerate(G_currs):
+            G_curr.to(opt.device)
             z_ae_curr = z_ae[indices_per_decoder[i], :, :, :]
             real_zero = reals_zero[indices_per_decoder[i], :, :, :]
             real = reals[indices_per_decoder[i], :, :, :]
@@ -238,6 +239,8 @@ def train(opt, netGs, encoder, reals, reals_zero):
                 del errD_real
             else:
                 del rec_vae_loss
+
+            G_curr.to("cpu")
 
         optimizer_encoder.step()
 
