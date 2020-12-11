@@ -155,11 +155,12 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec", class_idx_batch=idx)
+        generated, generated_vae, (mu, logvar) = G_curr(real_zero, opt.Noise_Amps, mode="rec", class_idx_batch=idx)
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            vae_loss = opt.rec_weight * rec_vae_loss
+            kl_loss = kl_criterion(mu, logvar)
+            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss
 
             total_loss += vae_loss
         else:
@@ -222,6 +223,7 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
+                opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
