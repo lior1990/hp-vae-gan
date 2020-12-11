@@ -151,6 +151,7 @@ def train(opt, netGs, encoder, reals, reals_zero):
 
                 gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device)
                 errD_total = errD_real + errD_fake + gradient_penalty
+                errD_total /= len(netGs)
                 errD_total.backward()
                 optimizerD.step()
 
