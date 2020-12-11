@@ -45,7 +45,7 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         return img
 
     def __getitem__(self, idx):
-        image_full_scale = self._get_image(idx)
+        idx, image_full_scale = self._get_image(idx)
 
         # Horizontal flip (Until Kornia will handle videos
         hflip = random.random() < 0.5 if self.opt.hflip else False
@@ -56,9 +56,9 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         if self.opt.scale_idx > 0:
             images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
 
-            return [images_transformed, images_zero_scale_transformed]
+            return [idx, images_transformed, images_zero_scale_transformed]
 
-        return images_transformed
+        return idx, images_transformed
 
     @abstractmethod
     def _get_image(self, idx):
@@ -100,9 +100,9 @@ class MultipleImageDataset(ImageDataset):
             exit(0)
 
         self.images = []
-        for img_path in os.listdir(opt.image_path):
+        for idx, img_path in enumerate(os.listdir(opt.image_path), start=1):
             image_full_scale = imageio.imread(os.path.join(opt.image_path, img_path))[:, :, :3]
-            self.images.append(image_full_scale)
+            self.images.append((idx, image_full_scale))
 
         self.num_of_images = len(self.images)
 
@@ -110,7 +110,7 @@ class MultipleImageDataset(ImageDataset):
 
         # Get original frame size and aspect-ratio
         # assumption: all images are of the same size
-        h, w = self.images[0].shape[:2]
+        h, w = self.images[0][1].shape[:2]
         opt.ar = h / w  # H2W
 
     def __len__(self):

@@ -20,7 +20,7 @@ import torch.optim as optim
 
 from modules import networks_2d
 from modules.losses import kl_criterion
-from modules.utils import calc_gradient_penalty
+from modules.utils import calc_gradient_penalty, pad_with_cls
 from datasets.image import SingleImageDataset, MultipleImageDataset
 
 clear = colorama.Style.RESET_ALL
@@ -60,14 +60,12 @@ def train(opt, netG):
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-train_depth:])]
-            # use encoder in all scales
-            parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+            # todo: add decoder at all scales?
+            # parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
         else:
             # VAE
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder_head.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder_base.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder_tail.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
             parameter_list += [
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
@@ -85,20 +83,6 @@ def train(opt, netG):
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-opt.train_depth:])]
-
-    # if opt.vae_levels < opt.scale_idx + 1:
-    #     train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
-    #     parameter_list += [
-    #         {"params": block.parameters(), "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
-    #         for idx, block in enumerate(netG.body[-train_depth:])]
-    # else:
-    #     # VAE
-    #     parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-    #                        {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
-    #     parameter_list += [
-    #         {"params": block.parameters(),
-    #          "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
-    #         for idx, block in enumerate(netG.body[-opt.train_depth:])]
 
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
@@ -131,15 +115,18 @@ def train(opt, netG):
             data = next(iterator)
 
         if opt.scale_idx > 0:
-            real, real_zero = data
-            real = real.to(opt.device)
-            real_zero = real_zero.to(opt.device)
+            idx, real, real_zero = data
         else:
-            real = data.to(opt.device)
+            idx, real = data
             real_zero = real
 
+        idx = idx.to(opt.device)
+        idx = idx.unsqueeze(dim=1)
+        real = real.to(opt.device)
+        real_zero = real_zero.to(opt.device)
+
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [7, 11]
+        initial_size = [int(initial_size * opt.ar), initial_size]
         opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
 
         noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
@@ -157,7 +144,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction, _, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec", class_idx_batch=idx)
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -168,7 +155,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec", class_idx_batch=idx)
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
@@ -184,18 +171,18 @@ def train(opt, netG):
 
             # Train 3D Discriminator
             D_curr.zero_grad()
-            output = D_curr(real)
+            output = D_curr(pad_with_cls(real, idx))
             errD_real = -output.mean()
 
             # train with fake
             #################
-            fake, _, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", class_idx_batch=idx)
 
             # Train 3D Discriminator
-            output = D_curr(fake.detach())
+            output = D_curr(pad_with_cls(fake.detach(), idx))
             errD_fake = output.mean()
 
-            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device)
+            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device, idx)
             errD_total = errD_real + errD_fake + gradient_penalty
             errD_total.backward()
             optimizerD.step()
@@ -206,31 +193,10 @@ def train(opt, netG):
             errG_total = 0
             rec_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
 
-            should_calc_diversity_loss = False
-
-            if opt.diversity_start_scale < opt.scale_idx:
-                should_calc_diversity_loss = (opt.scale_idx - opt.diversity_start_scale) <= opt.diversity_total_scales
-
-            if should_calc_diversity_loss:
-                # diversity loss
-                noise1 = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
-                noise2 = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
-
-                real_zero_pair = torch.cat([real_zero, real_zero], dim=0)
-                noise_pair = torch.cat([noise1, noise2], dim=0)
-
-                rand_generated_pair = G_curr(real_zero_pair, opt.Noise_Amps, mode="rec", noise_init=noise_pair)[0]
-                generated1, generated2 = torch.split(rand_generated_pair, real.size(0), dim=0)
-
-                lz = torch.mean(torch.abs(generated2 - generated1)) / torch.mean(torch.abs(noise2 - noise1))
-                eps = 1 * 1e-5
-                diversity_loss = 1 / (lz + eps)
-                errG_total += diversity_loss * opt.diversity_loss_weight
-
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
-            output = D_curr(fake)
+            output = D_curr(pad_with_cls(fake, idx))
             errG = -output.mean() * opt.disc_loss_weight
             errG_total += errG
 
@@ -254,8 +220,6 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
-                if should_calc_diversity_loss:
-                    opt.summary.add_scalar('Video/Scale {}/diversity_loss'.format(opt.scale_idx), diversity_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
@@ -266,7 +230,7 @@ def train(opt, netG):
                     fake_vae_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, fake_vae, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand", class_idx_batch=idx)
                         fake_var.append(fake)
                         fake_vae_var.append(fake_vae)
                     fake_var = torch.cat(fake_var, dim=0)

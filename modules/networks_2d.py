@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import copy
 import utils
+from modules.utils import pad_with_cls
 
 
 def conv_weights_init_ones(m):
@@ -24,8 +25,8 @@ def weights_init(m):
 
 def get_activation(act):
     activations = {
-        "relu": nn.ReLU(inplace=True),
-        "lrelu": nn.LeakyReLU(0.2, inplace=True),
+        "relu": nn.ReLU(),
+        "lrelu": nn.LeakyReLU(0.2),
         "elu": nn.ELU(alpha=1.0, inplace=True),
         "prelu": nn.PReLU(num_parameters=1, init=0.25),
         "selu": nn.SELU(inplace=True)
@@ -79,12 +80,12 @@ class ConvBlock2DSN(nn.Sequential):
 
 
 class FeatureExtractor(nn.Sequential):
-    def __init__(self, in_channel, out_channel, ker_size, padding, stride, num_blocks=2, return_linear=False):
+    def __init__(self, in_channel, out_channel, ker_size, padding, stride, num_blocks=2, return_linear=False, pooling=True):
         super(FeatureExtractor, self).__init__()
-        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride, pooling=True)),
+        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride, pooling=pooling)),
         for i in range(num_blocks - 1):
             self.add_module('conv_block_{}'.format(i + 1),
-                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride, pooling=True))
+                            ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride, pooling=pooling))
         if return_linear:
             self.add_module('conv_block_{}'.format(num_blocks),
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride, bn=False, act=None))
@@ -123,7 +124,7 @@ class Encode2DVAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(opt.nc_im+1, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks, pooling=False)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
@@ -194,7 +195,7 @@ class WDiscriminator2D(nn.Module):
 
         self.opt = opt
         N = int(opt.nfc)
-        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+        self.head = ConvBlock2DSN(opt.nc_im+1, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
@@ -206,6 +207,25 @@ class WDiscriminator2D(nn.Module):
         body = self.body(head)
         out = self.tail(body)
         return out
+
+
+class WDiscriminator2DMulti(nn.Module):
+    def __init__(self, opt, num_classes):
+        super(WDiscriminator2DMulti, self).__init__()
+        self.opt = opt
+        N = int(opt.nfc)
+        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+        self.body = nn.Sequential()
+        for i in range(opt.num_layer):
+            block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+            self.body.add_module('block%d' % (i), block)
+        self.tail = nn.Conv2d(max(N, opt.min_nfc), num_classes, kernel_size=opt.ker_size, stride=1, padding=opt.padd_size)
+
+    def forward(self, x):
+        x = self.head(x)
+        x = self.body(x)
+        x = self.tail(x)
+        return x
 
 
 class Conv2DTranspose(nn.Module):
@@ -243,7 +263,7 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         # Normal Decoder
         # self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=2))
@@ -251,10 +271,19 @@ class GeneratorHPVAEGAN(nn.Module):
         #     block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=2)
         #     self.decoder.add_module('block%d' % (i), block)
         # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 2, opt.ker_size // 2))
+        self.decoder = nn.Sequential()
 
-        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
-        self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
-        self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
+        # Normal Decoder
+        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim+1, N, opt.ker_size, opt.padd_size, stride=1))
+        for i in range(opt.num_layer):
+            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+            self.decoder.add_module('block%d' % (i), block)
+        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
+
+        # # AE decoder:
+        # self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
+        # self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
+        # self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
 
         self.body = torch.nn.ModuleList([])
 
@@ -262,7 +291,7 @@ class GeneratorHPVAEGAN(nn.Module):
         if len(self.body) == 0:
             _first_stage = nn.Sequential()
             _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
+                                    ConvBlock2D(self.opt.nc_im+1, self.N, self.opt.ker_size, self.opt.padd_size,
                                                 stride=1))
             for i in range(self.opt.num_layer):
                 block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
@@ -273,30 +302,26 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand', class_idx_batch=None):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        z_ae = self.encode(video)
-
-        if noise_init is not None:
-            z_ae += noise_init
-
-        # decode
-        vae_out = self.decoder_head(z_ae)
-        vae_out = self.decoder_base(vae_out)
-        vae_out = self.decoder_tail(vae_out)
-        vae_out = torch.tanh(vae_out)
-
-        if sample_init is not None:
-            x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
+        if noise_init is None:
+            mu, logvar = self.encode(pad_with_cls(video, class_idx_batch))
+            z_vae = reparameterize(mu, logvar, self.training)
         else:
-            x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
+            mu, logvar = None, None
+            z_vae = noise_init
 
-        return x_prev_out, vae_out, z_ae
+        vae_out = torch.tanh(self.decoder(pad_with_cls(z_vae, class_idx_batch)))
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
+        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_idx_batch)
+
+        return x_prev_out, vae_out, (mu, logvar)
+
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_idx_batch):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
+            # todo: remove this so encoder will train at all scales?
             if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
                 x_prev_out.detach_()
 
@@ -306,9 +331,11 @@ class GeneratorHPVAEGAN(nn.Module):
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
+                x_prev_forward = x_prev_out_up + noise * noise_amp[idx + 1]
             else:
-                x_prev = block(x_prev_out_up)
+                x_prev_forward = x_prev_out_up
+
+            x_prev = block(pad_with_cls(x_prev_forward, class_idx_batch))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
