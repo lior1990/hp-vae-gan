@@ -65,7 +65,9 @@ def train(opt, netG):
         else:
             # VAE
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+                               {"params": netG.decoder_head.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.decoder_base.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.decoder_tail.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
             parameter_list += [
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
@@ -126,7 +128,7 @@ def train(opt, netG):
         real_zero = real_zero.to(opt.device)
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [int(initial_size * opt.ar), initial_size]
+        initial_size = [7, 11]
         opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
 
         noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
@@ -155,12 +157,11 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, (mu, logvar) = G_curr(real_zero, opt.Noise_Amps, mode="rec", class_idx_batch=idx)
+        generated, generated_vae, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec", class_idx_batch=idx)
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            kl_loss = kl_criterion(mu, logvar)
-            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss
+            vae_loss = opt.rec_weight * rec_vae_loss
 
             total_loss += vae_loss
         else:
@@ -223,7 +224,6 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
-                opt.summary.add_scalar('Video/Scale {}/KLD'.format(opt.scale_idx), kl_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
