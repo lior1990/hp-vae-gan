@@ -103,7 +103,7 @@ class Encode2DAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(opt.nc_im+1, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.encoder = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1)
 
     def forward(self, x):
@@ -194,7 +194,7 @@ class WDiscriminator2D(nn.Module):
 
         self.opt = opt
         N = int(opt.nfc)
-        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+        self.head = ConvBlock2DSN(opt.nc_im+1, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
@@ -206,6 +206,25 @@ class WDiscriminator2D(nn.Module):
         body = self.body(head)
         out = self.tail(body)
         return out
+
+
+class WDiscriminator2DMulti(nn.Module):
+    def __init__(self, opt, num_classes):
+        super(WDiscriminator2DMulti, self).__init__()
+        self.opt = opt
+        N = int(opt.nfc)
+        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+        self.body = nn.Sequential()
+        for i in range(opt.num_layer):
+            block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+            self.body.add_module('block%d' % (i), block)
+        self.tail = nn.Conv2d(max(N, opt.min_nfc), num_classes, kernel_size=opt.ker_size, stride=1, padding=opt.padd_size)
+
+    def forward(self, x):
+        x = self.head(x)
+        x = self.body(x)
+        x = self.tail(x)
+        return x
 
 
 class Conv2DTranspose(nn.Module):
@@ -252,9 +271,11 @@ class GeneratorHPVAEGAN(nn.Module):
         #     self.decoder.add_module('block%d' % (i), block)
         # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 2, opt.ker_size // 2))
 
-        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
+        self.decoder_head = Conv2DUpsample(opt.latent_dim+1, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
         self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
         self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
+
+        self.avg_pool = nn.AvgPool2d(opt.ker_size)
 
         self.body = torch.nn.ModuleList([])
 
@@ -262,7 +283,7 @@ class GeneratorHPVAEGAN(nn.Module):
         if len(self.body) == 0:
             _first_stage = nn.Sequential()
             _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
+                                    ConvBlock2D(self.opt.nc_im+1, self.N, self.opt.ker_size, self.opt.padd_size,
                                                 stride=1))
             for i in range(self.opt.num_layer):
                 block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
@@ -273,7 +294,7 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, z_ae, noise_amp, noise_init=None, sample_init=None, mode='rand'):
+    def forward(self, z_ae, class_map, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
@@ -282,34 +303,36 @@ class GeneratorHPVAEGAN(nn.Module):
         # if noise_init is not None:
         #     z_ae += noise_init
 
+        z_class_map = self.avg_pool(class_map)
+
         # decode
-        vae_out = self.decoder_head(z_ae)
+        vae_out = self.decoder_head(torch.cat([z_ae, z_class_map], dim=1))
         vae_out = self.decoder_base(vae_out)
         vae_out = self.decoder_tail(vae_out)
         vae_out = torch.tanh(vae_out)
 
-        if sample_init is not None:
-            x_prev_out = self.refinement_layers(sample_init[0], sample_init[1], noise_amp, mode)
-        else:
-            x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
+        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_map)
 
         return x_prev_out, vae_out, z_ae
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_map):
+        class_map_up = class_map
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             #if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
                 #x_prev_out.detach_()
 
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+            class_map_up = utils.upscale_2d(class_map_up, idx+1, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
+                x_prev_forward = x_prev_out_up + noise * noise_amp[idx + 1]
             else:
-                x_prev = block(x_prev_out_up)
+                x_prev_forward = x_prev_out_up
 
+            x_prev = block(torch.cat([x_prev_forward, class_map_up], dim=1))
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
         return x_prev_out
