@@ -38,7 +38,7 @@ except Exception as e:
     use_neptune = False
 
 
-def calc_classifier_loss(output, class_indices_map):
+def calc_classifier_loss(output, class_indices_map, opt):
     loss_fn = torch.nn.CrossEntropyLoss()
 
     # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
@@ -46,7 +46,7 @@ def calc_classifier_loss(output, class_indices_map):
     shape = reshaped_output.shape
     reshaped_output = output.reshape(shape[0]*shape[1]*shape[2], -1)  # b*h*w, class
 
-    target = class_indices_map.reshape(-1).type(torch.LongTensor)
+    target = class_indices_map.reshape(-1).type(torch.LongTensor).to(opt.device)
 
     # input shape: (batch, channel), target shape: (batch)
     loss = loss_fn(reshaped_output, target)
@@ -103,7 +103,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
 
     for iteration in epoch_iterator:
         classifier_output = map_classifier(reals)
-        classifier_loss = calc_classifier_loss(classifier_output, class_indices_real)
+        classifier_loss = calc_classifier_loss(classifier_output, class_indices_real, opt)
         optimizer_map_classifier.step()
 
         encoder.zero_grad()
