@@ -219,6 +219,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
                     loo_real_zero = reals_zero[i].unsqueeze(dim=0)
                     loo_real = reals[i].unsqueeze(dim=0)
                     loo_map_classifier_output = map_classifier(loo_real_zero)
+                    loo_map_classifier_output = loo_map_classifier_output[:, indices_per_decoder[i], :, :]
                     loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor)
                     loo_rec = G_curr(loo_z_ae, loo_map.unsqueeze(dim=1), opt.Noise_Amps, mode="rec")[0]
                     loo_loss = opt.rec_loss(loo_rec, loo_real)
