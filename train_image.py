@@ -1,6 +1,6 @@
 import matplotlib
 
-from modules.networks_2d import Encode2DAE
+from modules.networks_2d import Encode2DAE, WDiscriminator2DMulti
 
 matplotlib.use("Agg")
 
@@ -38,6 +38,23 @@ except Exception as e:
     use_neptune = False
 
 
+def calc_classifier_loss(output, class_indices_map):
+    loss_fn = torch.nn.CrossEntropyLoss()
+
+    # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
+    reshaped_output = output.permute(0, 2, 3, 1)  # b, class, h, w -> b, h, w, class
+    shape = reshaped_output.shape
+    reshaped_output = output.reshape(shape[0]*shape[1]*shape[2], -1)  # b*h*w, class
+
+    target = class_indices_map.reshape(-1).type(torch.LongTensor)
+
+    # input shape: (batch, channel), target shape: (batch)
+    loss = loss_fn(reshaped_output, target)
+    loss.backward()
+
+    return loss
+
+
 def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class_indices_real):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
@@ -51,6 +68,10 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
+
+    map_classifier = WDiscriminator2DMulti(opt, reals.shape[0]).to(opt.device)
+    optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
+    log_softmax = torch.nn.LogSoftmax(dim=1)
 
     optimizerGs = []
     for netG in netGs:
@@ -81,6 +102,10 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
     indices_per_decoder = [[j for j in range(len(G_currs)) if j != i] for i in range(len(G_currs))]
 
     for iteration in epoch_iterator:
+        classifier_output = map_classifier(reals)
+        classifier_loss = calc_classifier_loss(classifier_output, class_indices_real)
+        optimizer_map_classifier.step()
+
         encoder.zero_grad()
         z_ae = encoder(torch.cat([reals_zero, class_indices_real_zero], dim=1))
 
@@ -188,11 +213,14 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
                     opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/errD_real', errD_real.item(), iteration)
                 else:
                     opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/Rec VAE', rec_vae_loss.item(), iteration)
+                opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/Classifier loss', classifier_loss.item(), iteration)
 
                 with torch.no_grad():
-                    # todo: need to change class_indices_curr to exclude its own class and use others
-                    loo_rec = G_curr(loo_z_ae, loo_class, opt.Noise_Amps, mode="rec")[0]
+                    loo_real_zero = reals_zero[i].unsqueeze(dim=0)
                     loo_real = reals[i].unsqueeze(dim=0)
+                    loo_map_classifier_output = map_classifier(loo_real_zero)
+                    loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor)
+                    loo_rec = G_curr(loo_z_ae, loo_map.unsqueeze(dim=1), opt.Noise_Amps, mode="rec")[0]
                     loo_loss = opt.rec_loss(loo_rec, loo_real)
                     opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/LOO Rec', loo_loss.item(), iteration)
 

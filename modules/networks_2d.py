@@ -218,7 +218,7 @@ class WDiscriminator2DMulti(nn.Module):
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
             self.body.add_module('block%d' % (i), block)
-        self.tail = nn.Conv2d(max(N, opt.min_nfc), num_classes, kernel_size=opt.ker_size, stride=1, padding=opt.padd_size)
+        self.tail = nn.Conv2d(N, num_classes, kernel_size=opt.ker_size, padding=opt.padd_size, stride=1)
 
     def forward(self, x):
         x = self.head(x)
@@ -275,7 +275,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
         self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
 
-        self.avg_pool = nn.AvgPool2d(opt.ker_size)
+        self.max_pool = nn.MaxPool2d(opt.ker_size)
 
         self.body = torch.nn.ModuleList([])
 
@@ -303,7 +303,7 @@ class GeneratorHPVAEGAN(nn.Module):
         # if noise_init is not None:
         #     z_ae += noise_init
 
-        z_class_map = self.avg_pool(class_map)
+        z_class_map = self.max_pool(class_map)
 
         # decode
         vae_out = self.decoder_head(torch.cat([z_ae, z_class_map], dim=1))
