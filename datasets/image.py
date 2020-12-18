@@ -100,7 +100,7 @@ class MultipleImageDataset(ImageDataset):
             exit(0)
 
         self.images = []
-        for idx, img_path in enumerate(os.listdir(opt.image_path), start=1):
+        for idx, img_path in enumerate(os.listdir(opt.image_path)):
             image_full_scale = imageio.imread(os.path.join(opt.image_path, img_path))[:, :, :3]
             self.images.append((idx, image_full_scale))
 

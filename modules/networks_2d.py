@@ -195,7 +195,7 @@ class WDiscriminator2D(nn.Module):
 
         self.opt = opt
         N = int(opt.nfc)
-        self.head = ConvBlock2DSN(opt.nc_im+1, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
@@ -219,7 +219,7 @@ class WDiscriminator2DMulti(nn.Module):
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
             self.body.add_module('block%d' % (i), block)
-        self.tail = nn.Conv2d(max(N, opt.min_nfc), num_classes, kernel_size=opt.ker_size, stride=1, padding=opt.padd_size)
+        self.tail = nn.Conv2d(N, num_classes, kernel_size=opt.ker_size, padding=opt.padd_size, stride=1)
 
     def forward(self, x):
         x = self.head(x)
@@ -266,7 +266,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
         # AE decoder:
-        self.decoder_head = Conv2DUpsample(opt.latent_dim+1, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
+        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
         self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
         self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
 
@@ -287,26 +287,27 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, video, noise_amp, noise_init=None, sample_init=None, mode='rand', class_idx_batch=None):
+    def forward(self, video, class_maps_per_scale, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
             assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
 
-        z_ae = self.encode(pad_with_cls(video, class_idx_batch, self.opt))
+        class_maps_for_encoder = class_maps_per_scale[0]
+        z_ae = self.encode(torch.cat([video, class_maps_for_encoder], dim=1))
 
         if noise_init is not None:
             z_ae += noise_init
 
         # decode
-        vae_out = self.decoder_head(pad_with_cls(z_ae, class_idx_batch, self.opt))
+        vae_out = self.decoder_head(z_ae)
         vae_out = self.decoder_base(vae_out)
         vae_out = self.decoder_tail(vae_out)
         vae_out = torch.tanh(vae_out)
 
-        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_idx_batch)
+        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_maps_per_scale)
 
         return x_prev_out, vae_out, z_ae
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_idx_batch):
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_maps_per_scale):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # todo: remove this so encoder will train at all scales?
             if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
@@ -322,7 +323,7 @@ class GeneratorHPVAEGAN(nn.Module):
             else:
                 x_prev_forward = x_prev_out_up
 
-            x_prev = block(pad_with_cls(x_prev_forward, class_idx_batch, self.opt))
+            x_prev = block(torch.cat([x_prev_forward, class_maps_per_scale[idx+1]], dim=1))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
