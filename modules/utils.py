@@ -1,7 +1,7 @@
 import torch
 
 
-def calc_gradient_penalty(netD, real_data, fake_data, LAMBDA, opt):
+def calc_gradient_penalty(netD, real_data, fake_data, LAMBDA, opt, conditioned_data):
     alpha = torch.rand(1, 1)
     alpha = alpha.expand(real_data.size())
     alpha = alpha.to(opt.device)
@@ -9,7 +9,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, LAMBDA, opt):
     interpolates = (alpha * real_data + ((1 - alpha) * fake_data))
     interpolates = torch.autograd.Variable(interpolates, requires_grad=True)
 
-    disc_interpolates = netD(interpolates)
+    disc_interpolates = netD(torch.cat([interpolates, conditioned_data], dim=1))
 
     gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
                                     grad_outputs=torch.ones(disc_interpolates.size()).to(opt.device),

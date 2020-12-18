@@ -217,7 +217,7 @@ def train(opt, netG, class_maps_per_scale):
 
             # Train 3D Discriminator
             D_curr.zero_grad()
-            output = D_curr(real)
+            output = D_curr(torch.cat([real, class_maps_per_scale_for_batch[-1]], dim=1))
             errD_real = -output.mean()
 
             # train with fake
@@ -225,10 +225,10 @@ def train(opt, netG, class_maps_per_scale):
             fake, _, _ = G_curr(real_zero, class_maps_per_scale_for_batch, opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
             # Train 3D Discriminator
-            output = D_curr(fake.detach())
+            output = D_curr(torch.cat([fake.detach(), class_maps_per_scale_for_batch[-1]], dim=1))
             errD_fake = output.mean()
 
-            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt)
+            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt, class_maps_per_scale_for_batch[-1])
             errD_total = errD_real + errD_fake + gradient_penalty
             errD_total.backward()
             optimizerD.step()
@@ -242,7 +242,7 @@ def train(opt, netG, class_maps_per_scale):
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
-            output = D_curr(fake)
+            output = D_curr(torch.cat([fake, class_maps_per_scale_for_batch[-1]], dim=1))
             errG = -output.mean() * opt.disc_loss_weight
             errG_total += errG
 
