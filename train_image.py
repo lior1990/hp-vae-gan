@@ -58,7 +58,12 @@ def calc_classifier_loss(output, class_indices_map, opt):
 
 def train(opt):
     number_of_images = len(os.listdir(opt.image_path))
-    map_classifier = networks_2d.MultiClassClassifier(number_of_images).to(opt.device)
+
+    if opt.classifier == "regular":
+        map_classifier = networks_2d.WDiscriminator2DMulti(opt, number_of_images).to(opt.device)
+    else:
+        map_classifier = networks_2d.MultiClassClassifier(number_of_images).to(opt.device)
+
     if opt.scale_idx > 0:
         map_classifier.load_state_dict(
             torch.load('{}/classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
@@ -186,6 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
     parser.add_argument('--tag', type=str, default='', help='neptune ai tag')
+    parser.add_argument('--classifier', type=str, default='regular')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
