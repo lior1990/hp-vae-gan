@@ -35,21 +35,24 @@ except Exception as e:
     print(e)
     use_neptune = False
 
+log_softmax = torch.nn.LogSoftmax(dim=1)
+
 
 def calc_classifier_loss(output, class_indices_map, opt):
     loss_fn = torch.nn.CrossEntropyLoss()
 
     # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
-    reshaped_output = output.permute(0, 2, 3, 1)  # b, class, h, w -> b, h, w, class
-    shape = reshaped_output.shape
-    reshaped_output = output.reshape(shape[0]*shape[1]*shape[2], -1)  # b*h*w, class
-
-    target = class_indices_map.reshape(-1).type(torch.LongTensor).to(opt.device)
+    target = class_indices_map.squeeze(dim=1).type(torch.LongTensor).to(opt.device)
 
     # input shape: (batch, channel), target shape: (batch)
-    loss = loss_fn(reshaped_output, target)
+    loss = loss_fn(output, target)
 
-    return loss
+    class_map = log_softmax(output).max(dim=1).indices
+    true_preds = (target == class_map).sum()
+    total = float(class_map.nelement())
+
+    acc = true_preds / total
+    return loss, acc
 
 
 def train(opt, netG, class_maps_per_scale):
@@ -73,7 +76,6 @@ def train(opt, netG, class_maps_per_scale):
             torch.load('{}/classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
 
     optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
-    log_softmax = torch.nn.LogSoftmax(dim=1)
 
     parameter_list = []
     # Generator Adversary
@@ -155,7 +157,7 @@ def train(opt, netG, class_maps_per_scale):
         map_classifier.zero_grad()
         classifier_output = map_classifier(real)
         class_indices_map = torch.full((idx.shape[0], 1, real.shape[2], real.shape[3]), 1, device=opt.device) * idx.view(-1, 1, 1, 1)
-        classifier_loss = calc_classifier_loss(classifier_output, class_indices_map, opt)
+        classifier_loss, classifier_accuracy = calc_classifier_loss(classifier_output, class_indices_map, opt)
         classifier_loss.backward()
         optimizer_map_classifier.step()
 
@@ -199,7 +201,7 @@ def train(opt, netG, class_maps_per_scale):
         generated, generated_vae, _ = G_curr(real_zero, class_maps_per_scale_for_batch, opt.Noise_Amps, mode="rec")
 
         generated_classifier_output = map_classifier(generated)
-        err_classifier = calc_classifier_loss(generated_classifier_output, class_indices_map, opt)
+        err_classifier, _ = calc_classifier_loss(generated_classifier_output, class_indices_map, opt)
 
         total_loss = err_classifier
 
@@ -247,7 +249,7 @@ def train(opt, netG, class_maps_per_scale):
             errG_total += errG
 
             fake_classifier_output = map_classifier(fake)
-            errG_classifier = calc_classifier_loss(fake_classifier_output, class_indices_map, opt)
+            errG_classifier, _ = calc_classifier_loss(fake_classifier_output, class_indices_map, opt)
             errD_total += errG_classifier
 
             total_loss += errG_total
@@ -274,6 +276,7 @@ def train(opt, netG, class_maps_per_scale):
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
             opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier loss', classifier_loss.item(), iteration)
+            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier accuracy', classifier_accuracy.item(), iteration)
             opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/G classifier error', err_classifier.item(), iteration)
 
             if iteration % opt.print_interval == 0:
