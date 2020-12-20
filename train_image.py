@@ -62,7 +62,7 @@ def calc_classifier_loss(output, class_indices_map, opt):
 
 def train(opt):
     number_of_images = len(os.listdir(opt.image_path))
-    map_classifier = networks_2d.WDiscriminator2DMulti(opt, number_of_images).to(opt.device)
+    map_classifier = networks_2d.MultiClassClassifier(number_of_images).to(opt.device)
     if opt.scale_idx > 0:
         map_classifier.load_state_dict(
             torch.load('{}/classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
