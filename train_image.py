@@ -43,17 +43,13 @@ def calc_classifier_loss(output, class_indices_map, opt):
     loss_fn = torch.nn.CrossEntropyLoss()
 
     # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
-    reshaped_output = output.permute(0, 2, 3, 1)  # b, class, h, w -> b, h, w, class
-    shape = reshaped_output.shape
-    reshaped_output = output.reshape(shape[0]*shape[1]*shape[2], -1)  # b*h*w, class
-
-    target = class_indices_map.reshape(-1).type(torch.LongTensor).to(opt.device)
+    target = class_indices_map.squeeze(dim=1).type(torch.LongTensor).to(opt.device)
 
     # input shape: (batch, channel), target shape: (batch)
-    loss = loss_fn(reshaped_output, target)
+    loss = loss_fn(output, target)
 
     class_map = log_softmax(output).max(dim=1).indices
-    true_preds = (class_indices_map.squeeze(dim=1) == class_map).sum()
+    true_preds = (target == class_map).sum()
     total = float(class_map.nelement())
 
     acc = true_preds / total
