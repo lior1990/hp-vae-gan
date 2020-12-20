@@ -213,7 +213,7 @@ class WDiscriminator2DMulti(nn.Module):
     def __init__(self, opt, num_classes):
         super(WDiscriminator2DMulti, self).__init__()
         self.opt = opt
-        N = int(opt.nfc)
+        N = int(4*opt.nfc)
         self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
         self.body = nn.Sequential()
         for i in range(opt.num_layer):

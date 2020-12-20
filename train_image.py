@@ -36,6 +36,9 @@ except Exception as e:
     use_neptune = False
 
 
+log_softmax = torch.nn.LogSoftmax(dim=1)
+
+
 def calc_classifier_loss(output, class_indices_map, opt):
     loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -49,7 +52,12 @@ def calc_classifier_loss(output, class_indices_map, opt):
     # input shape: (batch, channel), target shape: (batch)
     loss = loss_fn(reshaped_output, target)
 
-    return loss
+    class_map = log_softmax(output).max(dim=1).indices
+    true_preds = (class_indices_map.squeeze(dim=1) == class_map).sum()
+    total = float(class_map.nelement())
+
+    acc = true_preds / total
+    return loss, acc
 
 
 def train(opt):
@@ -94,18 +102,23 @@ def train(opt):
         map_classifier.zero_grad()
         classifier_output = map_classifier(real)
         class_indices_map = torch.full((idx.shape[0], 1, real.shape[2], real.shape[3]), 1, device=opt.device) * idx.view(-1, 1, 1, 1)
-        classifier_loss = calc_classifier_loss(classifier_output, class_indices_map, opt)
+        classifier_loss, acc = calc_classifier_loss(classifier_output, class_indices_map, opt)
         classifier_loss.backward()
         optimizer_map_classifier.step()
 
+        classifier_loss_value = classifier_loss.item()
+        classifier_acc_value = acc.item()
         # Update progress bar
-        epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}]'.format(
+        epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}], Loss: {:.4f}, Accuracy: {:.4f}'.format(
             opt.scale_idx + 1, opt.stop_scale + 1,
             iteration + 1, opt.niter,
+            classifier_loss_value,
+            classifier_acc_value,
         ))
 
         if opt.visualize:
-            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier loss', classifier_loss.item(), iteration)
+            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier loss', classifier_loss_value, iteration)
+            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier Accuracy', classifier_acc_value, iteration)
 
     epoch_iterator.close()
 
