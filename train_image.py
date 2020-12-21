@@ -250,7 +250,7 @@ def train(opt, netG, class_maps_per_scale):
 
             fake_classifier_output = map_classifier(fake)
             errG_classifier, _ = calc_classifier_loss(fake_classifier_output, class_indices_map, opt)
-            errD_total += errG_classifier
+            errG_total += errG_classifier
 
             total_loss += errG_total
 
