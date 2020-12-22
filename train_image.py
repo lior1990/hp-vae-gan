@@ -241,7 +241,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_
                     loo_real = reals[i].unsqueeze(dim=0)
                     loo_map_classifier_output = map_classifier(loo_real)
                     loo_map_classifier_output = loo_map_classifier_output[:, indices_per_decoder[i], :, :]
-                    loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor).unsqueeze(dim=0)
+                    loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor).to(opt.device).unsqueeze(dim=0)
 
                     if iteration == 0:
                         # first time: add the LOO map calculated by the classifier to the LOO map cache
