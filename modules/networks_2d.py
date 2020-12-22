@@ -106,8 +106,8 @@ class Encode2DAE(nn.Module):
         self.features = FeatureExtractor(opt.nc_im+1, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
         self.encoder = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1)
 
-    def forward(self, x):
-        features = self.features(x)
+    def forward(self, x, class_maps):
+        features = self.features(torch.cat([x, class_maps], dim=1))
         encoder = self.encoder(features)
 
         return encoder
@@ -271,7 +271,7 @@ class GeneratorHPVAEGAN(nn.Module):
         #     self.decoder.add_module('block%d' % (i), block)
         # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 2, opt.ker_size // 2))
 
-        self.decoder_head = Conv2DUpsample(opt.latent_dim+1, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
+        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
         self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
         self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
 
@@ -303,10 +303,11 @@ class GeneratorHPVAEGAN(nn.Module):
         # if noise_init is not None:
         #     z_ae += noise_init
 
-        z_class_map = self.max_pool(class_map)
+        if noise_init is not None:
+            z_ae += noise_init
 
         # decode
-        vae_out = self.decoder_head(torch.cat([z_ae, z_class_map], dim=1))
+        vae_out = self.decoder_head(z_ae)
         vae_out = self.decoder_base(vae_out)
         vae_out = self.decoder_tail(vae_out)
         vae_out = torch.tanh(vae_out)
@@ -315,15 +316,13 @@ class GeneratorHPVAEGAN(nn.Module):
 
         return x_prev_out, vae_out, z_ae
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_map):
-        class_map_up = class_map
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_maps_per_scale):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             #if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
                 #x_prev_out.detach_()
 
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
-            class_map_up = utils.upscale_2d(class_map_up, idx+1, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
@@ -332,7 +331,8 @@ class GeneratorHPVAEGAN(nn.Module):
             else:
                 x_prev_forward = x_prev_out_up
 
-            x_prev = block(torch.cat([x_prev_forward, class_map_up], dim=1))
+            # scale 0 is for the encoder, therefore we use idx+1 for class map
+            x_prev = block(torch.cat([x_prev_forward, class_maps_per_scale[idx+1]], dim=1))
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
         return x_prev_out

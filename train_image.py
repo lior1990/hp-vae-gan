@@ -24,6 +24,7 @@ from modules import networks_2d
 from modules.losses import kl_criterion
 from modules.utils import calc_gradient_penalty
 from datasets.image import SingleImageDataset, MultipleImageDataset
+from collections import defaultdict
 
 clear = colorama.Style.RESET_ALL
 blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
@@ -37,25 +38,27 @@ except Exception as e:
     print(e)
     use_neptune = False
 
+log_softmax = torch.nn.LogSoftmax(dim=1)
 
-def calc_classifier_loss(output, class_indices_map, opt):
-    loss_fn = torch.nn.CrossEntropyLoss()
+
+def calc_classifier_loss(output, class_indices_map, opt, ignore_idx):
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=ignore_idx)
 
     # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
-    reshaped_output = output.permute(0, 2, 3, 1)  # b, class, h, w -> b, h, w, class
-    shape = reshaped_output.shape
-    reshaped_output = output.reshape(shape[0]*shape[1]*shape[2], -1)  # b*h*w, class
-
-    target = class_indices_map.reshape(-1).type(torch.LongTensor).to(opt.device)
+    target = class_indices_map.squeeze(dim=1).type(torch.LongTensor).to(opt.device)
 
     # input shape: (batch, channel), target shape: (batch)
-    loss = loss_fn(reshaped_output, target)
-    loss.backward()
+    loss = loss_fn(output, target)
 
-    return loss
+    class_map = log_softmax(output).max(dim=1).indices
+    true_preds = (target == class_map).sum()
+    total = float(class_map.nelement())
+
+    acc = true_preds / total
+    return loss, acc
 
 
-def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class_indices_real):
+def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_classifiers_per_scale):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
@@ -69,9 +72,17 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
 
-    map_classifier = WDiscriminator2DMulti(opt, reals.shape[0]).to(opt.device)
-    optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
-    log_softmax = torch.nn.LogSoftmax(dim=1)
+    map_classifiers = []
+    map_classifiers_optimizers = []
+    for clf_idx in range(len(netGs)):
+        # todo: should it be reals.shape[0] - 1 ??
+        map_classifier = WDiscriminator2DMulti(opt, reals.shape[0]).to(opt.device)
+        if opt.scale_idx > 0:
+            map_classifiers_state_dicts = torch.load('{}/map_classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict']
+            map_classifier.load_state_dict(map_classifiers_state_dicts[clf_idx])
+        map_classifiers.append(map_classifier)
+        optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
+        map_classifiers_optimizers.append(optimizer_map_classifier)
 
     optimizerGs = []
     for netG in netGs:
@@ -102,22 +113,27 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
     indices_per_decoder = [[j for j in range(len(G_currs)) if j != i] for i in range(len(G_currs))]
 
     for iteration in epoch_iterator:
-        classifier_output = map_classifier(reals)
-        classifier_loss = calc_classifier_loss(classifier_output, class_indices_real, opt)
-        optimizer_map_classifier.step()
-
         encoder.zero_grad()
-        z_ae = encoder(torch.cat([reals_zero, class_indices_real_zero], dim=1))
+        z_ae = encoder(reals_zero, class_maps_per_scale[0])
 
         for i, G_curr in enumerate(G_currs):
-            G_curr.to(opt.device)
             z_ae_curr = z_ae[indices_per_decoder[i], :, :, :]
-            class_indices_real_zero_curr = class_indices_real_zero[indices_per_decoder[i], :, :, :]
-            class_indices_real_curr = class_indices_real[indices_per_decoder[i], :, :, :]
+            class_maps_per_scale_per_batch = [class_maps[indices_per_decoder[i], :, :, :] for class_maps in class_maps_per_scale]
             real_zero = reals_zero[indices_per_decoder[i], :, :, :]
             real = reals[indices_per_decoder[i], :, :, :]
-            loo_z_ae = z_ae[[i], :, :, :]
-            loo_class = class_indices_real_zero[[i], :, :, :]
+
+            # map classifier
+            map_classifier.to(opt.device)
+            map_classifier = map_classifiers[i]
+            map_classifier_optimizer = map_classifiers_optimizers[i]
+            classifier_output = map_classifier(real)
+            classifier_loss, classifier_accuracy = calc_classifier_loss(classifier_output, class_maps_per_scale_per_batch[-1], opt, ignore_idx=i)
+            map_classifier.zero_grad()
+            classifier_loss.backward()
+            map_classifier_optimizer.step()
+
+            # Generator
+            G_curr.to(opt.device)
 
             initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
             initial_size = [7, 11]
@@ -150,7 +166,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
             ###########################
             total_loss = 0
 
-            generated, generated_vae, _ = G_curr(z_ae_curr, class_indices_real_zero_curr, opt.Noise_Amps, mode="rec")
+            generated, generated_vae, _ = G_curr(z_ae_curr, class_maps_per_scale_per_batch, opt.Noise_Amps, mode="rec")
 
             if opt.vae_levels >= opt.scale_idx + 1:
                 rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
@@ -166,18 +182,18 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
 
                 # Train 3D Discriminator
                 D_curr.zero_grad()
-                output = D_curr(torch.cat([real, class_indices_real_curr], dim=1))
+                output = D_curr(torch.cat([real, class_maps_per_scale_per_batch[-1]], dim=1))
                 errD_real = -output.mean()
 
                 # train with fake
                 #################
-                fake, _, _ = G_curr(z_ae_curr + noise_init, class_indices_real_zero_curr, opt.Noise_Amps, mode="rand")
+                fake, _, _ = G_curr(z_ae_curr + noise_init, class_maps_per_scale_per_batch, opt.Noise_Amps, mode="rand")
 
                 # Train 3D Discriminator
-                output = D_curr(torch.cat([fake.detach(), class_indices_real_curr], dim=1))
+                output = D_curr(torch.cat([fake.detach(), class_maps_per_scale_per_batch[-1]], dim=1))
                 errD_fake = output.mean()
 
-                gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device, class_indices_real_curr)
+                gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device, class_maps_per_scale_per_batch[-1])
                 errD_total = errD_real + errD_fake + gradient_penalty
                 errD_total /= len(netGs)
                 errD_total.backward()
@@ -192,9 +208,13 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
                 errG_total += opt.rec_weight * rec_loss
 
                 # Train with 3D Discriminator
-                output = D_curr(torch.cat([fake, class_indices_real_curr], dim=1))
+                output = D_curr(torch.cat([fake, class_maps_per_scale_per_batch[-1]], dim=1))
                 errG = -output.mean() * opt.disc_loss_weight
                 errG_total += errG
+
+                fake_classifier_output = map_classifier(fake)
+                errG_classifier, _ = calc_classifier_loss(fake_classifier_output, class_maps_per_scale_per_batch[-1], opt, ignore_idx=i)
+                errG_total += errG_classifier
 
                 total_loss += errG_total
 
@@ -214,14 +234,24 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
                 else:
                     opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/Rec VAE', rec_vae_loss.item(), iteration)
                 opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/Classifier loss', classifier_loss.item(), iteration)
+                opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/Classifier accuracy', classifier_accuracy.item(), iteration)
 
                 with torch.no_grad():
                     loo_real_zero = reals_zero[i].unsqueeze(dim=0)
                     loo_real = reals[i].unsqueeze(dim=0)
-                    loo_map_classifier_output = map_classifier(loo_real_zero)
+                    loo_map_classifier_output = map_classifier(loo_real)
                     loo_map_classifier_output = loo_map_classifier_output[:, indices_per_decoder[i], :, :]
-                    loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor)
-                    loo_rec = G_curr(loo_z_ae, loo_map.unsqueeze(dim=1), opt.Noise_Amps, mode="rec")[0]
+                    loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor).unsqueeze(dim=0)
+
+                    if iteration == 0:
+                        # first time: add the LOO map calculated by the classifier to the LOO map cache
+                        loo_map_classifiers_per_scale[i].append(loo_map)
+                    else:
+                        # other times: override the latest map
+                        loo_map_classifiers_per_scale[i][opt.scale_idx] = loo_map
+
+                    loo_z_ae = encoder(loo_real_zero, loo_map_classifiers_per_scale[i][0])
+                    loo_rec = G_curr(loo_z_ae, loo_map_classifiers_per_scale[i], opt.Noise_Amps, mode="rec")[0]
                     loo_loss = opt.rec_loss(loo_rec, loo_real)
                     opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/LOO Rec', loo_loss.item(), iteration)
 
@@ -230,7 +260,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
                         rand_indices_to_plot = [random.randint(0, z_ae_curr.shape[0]-1) for _ in range(3)]
                         noise_init = utils.generate_noise(ref=noise_init)
                         rand_batch = z_ae_curr[rand_indices_to_plot] + noise_init[rand_indices_to_plot]
-                        rand_cls = class_indices_real_zero_curr[rand_indices_to_plot]
+                        rand_cls = [class_map[rand_indices_to_plot] for class_map in class_maps_per_scale_per_batch]
                         fake_var, fake_vae_var, _ = G_curr(rand_batch, rand_cls, opt.Noise_Amps, mode="rand")
 
                         loo_rec_vs_real = torch.cat([loo_rec, loo_real])
@@ -252,6 +282,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
             else:
                 del rec_vae_loss
 
+            map_classifier.to("cpu")
             G_curr.to("cpu")
 
         optimizer_encoder.step()
@@ -273,13 +304,17 @@ def train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class
         'optimizer': {i: optimizerG.state_dict() for i, optimizerG in enumerate(optimizerGs)},
         'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
+    opt.saver.save_checkpoint({
+        'scale': opt.scale_idx,
+        'state_dict': {i: map_classifier.state_dict() for i, map_classifier in enumerate(map_classifiers)},
+        'optimizer': {i: map_optimizer.state_dict() for i, map_optimizer in enumerate(map_classifiers_optimizers)},
+    }, 'map_classifier_{}.pth'.format(opt.scale_idx))
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
             'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
-        return D_curr
 
 
 def get_parameters_list(opt, netG):
@@ -479,6 +514,9 @@ if __name__ == '__main__':
     encoder = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
     encoder = encoder.to(opt.device)
 
+    class_maps_per_scale = []
+    loo_map_classifiers_per_scale = defaultdict(list)
+
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
             for netG in netGs:
@@ -493,12 +531,12 @@ if __name__ == '__main__':
             reals_zero = torch.stack([full_dataset[i][1] for i in range(len(full_dataset))]).to(opt.device)
             reals = reals_zero
 
-        class_indices_real_zero = torch.stack([torch.full((1, reals_zero.shape[2], reals_zero.shape[3]), full_dataset[i][0]) for i in range(10)]).to(opt.device)
-        class_indices_real = torch.stack(
-            [torch.full((1, reals.shape[2], reals.shape[3]), full_dataset[i][0]) for i in range(10)]).to(
+        full_class_indices_real = torch.stack(
+            [torch.full((1, reals.shape[2], reals.shape[3]), i) for i in range(len(full_dataset))]).to(
             opt.device)
+        class_maps_per_scale.append(full_class_indices_real)
 
-        train(opt, netGs, encoder, reals, reals_zero, class_indices_real_zero, class_indices_real)
+        train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_classifiers_per_scale)
         # Increase scale
         opt.scale_idx += 1
 
