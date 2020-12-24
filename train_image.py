@@ -116,13 +116,16 @@ def train(opt, netG, class_maps_per_scale):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
+
     if opt.device == 'cuda' and torch.cuda.device_count() > 1 and opt.data_parallel_start_scale <= opt.scale_idx:
+        using_data_parallel = True
         print(f"Using data parallel: {torch.cuda.device_count()} GPUs")
         G_curr = torch.nn.DataParallel(netG)
         map_classifier = torch.nn.DataParallel(map_classifier)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
     else:
+        using_data_parallel = False
         G_curr = netG
 
     progressbar_args = {
@@ -313,13 +316,13 @@ def train(opt, netG, class_maps_per_scale):
     }, 'netG.pth')
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
-        'state_dict':  map_classifier.module.state_dict() if opt.device == 'cuda' else map_classifier.state_dict(),
+        'state_dict':  map_classifier.module.state_dict() if using_data_parallel else map_classifier.state_dict(),
         'optimizer': optimizer_map_classifier.state_dict(),
     }, 'classifier_{}.pth'.format(opt.scale_idx))
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
-            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
+            'state_dict': D_curr.module.state_dict() if using_data_parallel else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
