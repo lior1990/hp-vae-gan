@@ -116,8 +116,10 @@ def train(opt, netG, class_maps_per_scale):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    if opt.device == 'cuda' and torch.cuda.device_count() > 1 and opt.data_parallel_start_scale <= opt.scale_idx:
+        print(f"Using data parallel: {torch.cuda.device_count()} GPUs")
         G_curr = torch.nn.DataParallel(netG)
+        map_classifier = torch.nn.DataParallel(map_classifier)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
     else:
@@ -311,7 +313,7 @@ def train(opt, netG, class_maps_per_scale):
     }, 'netG.pth')
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
-        'state_dict': map_classifier.state_dict(),
+        'state_dict':  map_classifier.module.state_dict() if opt.device == 'cuda' else map_classifier.state_dict(),
         'optimizer': optimizer_map_classifier.state_dict(),
     }, 'classifier_{}.pth'.format(opt.scale_idx))
     if opt.vae_levels < opt.scale_idx + 1:
@@ -382,6 +384,7 @@ if __name__ == '__main__':
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
     parser.add_argument('--tag', type=str, default='', help='neptune ai tag')
+    parser.add_argument('--data-parallel-start-scale', type=int, default=-1, help='In what scale should we start to use data parallel')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -492,6 +495,7 @@ if __name__ == '__main__':
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
             netG.init_next_stage()
+            netG.to(device)
 
         train(opt, netG, class_maps_per_scale)
 
