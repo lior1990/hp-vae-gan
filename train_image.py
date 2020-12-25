@@ -44,10 +44,8 @@ log_softmax = torch.nn.LogSoftmax(dim=1)
 def calc_classifier_loss(output, class_indices_map, opt, ignore_idx):
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=ignore_idx)
 
-    # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
     target = class_indices_map.squeeze(dim=1).type(torch.LongTensor).to(opt.device)
 
-    # input shape: (batch, channel), target shape: (batch)
     loss = loss_fn(output, target)
 
     class_map = log_softmax(output).max(dim=1).indices
@@ -92,11 +90,16 @@ def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_
     optimizer_encoder = optim.Adam(encoder.parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    if opt.device == 'cuda' and torch.cuda.device_count() > 1 and opt.data_parallel_start_scale <= opt.scale_idx:
+        using_data_parallel = True
+        print(f"Using data parallel: {torch.cuda.device_count()} GPUs")
+        # todo: move encoder to data parallel?
         G_currs = [torch.nn.DataParallel(netG) for netG in netGs]
+        map_classifiers = [torch.nn.DataParallel(map_classifier) for map_classifier in map_classifiers]
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
     else:
+        using_data_parallel = False
         G_currs = netGs
 
     progressbar_args = {
@@ -306,13 +309,13 @@ def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_
     }, 'netG.pth')
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
-        'state_dict': {i: map_classifier.state_dict() for i, map_classifier in enumerate(map_classifiers)},
+        'state_dict': {i: (map_classifier.module.state_dict() if using_data_parallel else map_classifier.state_dict()) for i, map_classifier in enumerate(map_classifiers)},
         'optimizer': {i: map_optimizer.state_dict() for i, map_optimizer in enumerate(map_classifiers_optimizers)},
     }, 'map_classifier_{}.pth'.format(opt.scale_idx))
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
-            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
+            'state_dict': D_curr.module.state_dict() if using_data_parallel else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
@@ -416,6 +419,7 @@ if __name__ == '__main__':
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
     parser.add_argument('--tag', type=str, default='', help='neptune ai tag')
+    parser.add_argument('--data-parallel-start-scale', type=int, default=-1, help='In what scale should we start to use data parallel')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
