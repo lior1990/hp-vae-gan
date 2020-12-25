@@ -62,7 +62,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_
 
         if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
             D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx-1))['state_dict'])
         elif opt.vae_levels < opt.scale_idx:
             D_curr.load_state_dict(
                 torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
@@ -76,7 +76,10 @@ def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_
         # todo: should it be reals.shape[0] - 1 ??
         map_classifier = WDiscriminator2DMulti(opt, reals.shape[0]).to(opt.device)
         if opt.scale_idx > 0:
-            map_classifiers_state_dicts = torch.load('{}/map_classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict']
+            if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
+                map_classifiers_state_dicts = torch.load('{}/map_classifier_{}.pth'.format(opt.resume_dir, opt.scale_idx-1))['state_dict']
+            else:
+                map_classifiers_state_dicts = torch.load('{}/map_classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict']
             map_classifier.load_state_dict(map_classifiers_state_dicts[clf_idx])
         map_classifiers.append(map_classifier)
         optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
@@ -254,7 +257,7 @@ def train(opt, netGs, encoder, reals, reals_zero, class_maps_per_scale, loo_map_
                         loo_map_classifiers_per_scale[i][opt.scale_idx] = loo_map
 
                     loo_z_ae = encoder(loo_real_zero, loo_map_classifiers_per_scale[i][0])
-                    loo_rec = G_curr(loo_z_ae, loo_map_classifiers_per_scale[i], opt.Noise_Amps, mode="rec")[0]
+                    loo_rec = netGs[i](loo_z_ae, loo_map_classifiers_per_scale[i], opt.Noise_Amps, mode="rec")[0]
                     loo_loss = opt.rec_loss(loo_rec, loo_real)
                     opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}_{i}/LOO Rec', loo_loss.item(), iteration)
 
@@ -494,13 +497,18 @@ if __name__ == '__main__':
             logging.info("{}Rec. Weight    :{} {}{}".format(blue, clear, opt.rec_weight, clear))
 
     full_dataset = MultipleImageDataset(opt)
+    dataset_size = len(full_dataset)
 
     # Current networks
     assert hasattr(networks_2d, opt.generator)
     netGs = [getattr(networks_2d, opt.generator)(opt).to(opt.device) for _ in range(len(full_dataset))]
 
+    encoder = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+    encoder = encoder.to(opt.device)
+    class_maps_per_scale = []
+    loo_map_classifiers_per_scale = defaultdict(list)
+
     if opt.netG != '':
-        raise NotImplementedError
         if not os.path.isfile(opt.netG):
             raise RuntimeError("=> no <G> checkpoint found at '{}'".format(opt.netG))
         checkpoint = torch.load(opt.netG)
@@ -508,21 +516,58 @@ if __name__ == '__main__':
         opt.resumed_idx = checkpoint['scale']
         opt.resume_dir = os.sep.join(opt.netG.split(os.sep)[:-1])
         for _ in range(opt.scale_idx):
-            netG.init_next_stage()
-        netG.load_state_dict(checkpoint['state_dict'])
+            for i in range(dataset_size):
+                netGs[i].init_next_stage()
+        for i in range(dataset_size):
+            netGs[i].load_state_dict(checkpoint['state_dict'][i])
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
+
+        encoder.load_state_dict(checkpoint["encoder"])
+
+        # the previous scale was already finished.
+        opt.scale_idx = checkpoint['scale'] + 1
+        opt.resumed_idx = checkpoint['scale'] + 1
+
+        scale_idx_backup = opt.scale_idx
+        indices_per_decoder = [[j for j in range(dataset_size) if j != i] for i in range(dataset_size)]
+
+        for scale_idx in range(opt.scale_idx):
+            opt.scale_idx = scale_idx
+
+            reals = torch.stack([full_dataset[i][1] for i in range(len(full_dataset))])
+
+            # restore class_maps_per_scale
+            full_class_indices_real = torch.stack(
+                [torch.full((1, reals.shape[2], reals.shape[3]), i) for i in range(len(full_dataset))]).to(
+                opt.device)
+            print(f"Restoring class maps for scale {scale_idx}: ({reals.shape[2]}, {reals.shape[3]})")
+
+            class_maps_per_scale.append(full_class_indices_real)
+
+            # restore loo_map_classifiers_per_scale
+            classifier_path_format = opt.netG.replace("netG.pth", "map_classifier_{scale_idx}.pth")
+            map_classifiers_checkpoint = torch.load(classifier_path_format.format(scale_idx=scale_idx))
+            for img_id in range(dataset_size):
+                map_classifier = WDiscriminator2DMulti(opt, dataset_size)
+                map_classifier.load_state_dict(map_classifiers_checkpoint["state_dict"][img_id])
+                loo_real = reals[i].unsqueeze(dim=0)
+                loo_map_classifier_output = map_classifier(loo_real)
+                loo_map_classifier_output = loo_map_classifier_output[:, indices_per_decoder[i], :, :]
+                loo_map = log_softmax(loo_map_classifier_output).max(dim=1).indices.type(torch.FloatTensor).to(
+                    opt.device).unsqueeze(dim=0)
+                del map_classifier
+                loo_map_classifiers_per_scale[img_id].append(loo_map)
+                print(f"Restored loo_map_classifiers_per_scale for img {img_id} at scale {scale_idx}")
+
+            del map_classifiers_checkpoint
+
+        opt.scale_idx = scale_idx_backup
     else:
         opt.resumed_idx = -1
 
-    encoder = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
-    encoder = encoder.to(opt.device)
-
-    class_maps_per_scale = []
-    loo_map_classifiers_per_scale = defaultdict(list)
-
     while opt.scale_idx < opt.stop_scale + 1:
-        if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
+        if opt.scale_idx > 0:
             for netG in netGs:
                 netG.init_next_stage()
 
