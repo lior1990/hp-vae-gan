@@ -126,7 +126,8 @@ def main():
         print(f"Starting to train scale {scale_idx}")
         pixel_cnn_trained_model, latest_samples = train_single_scale(args, scale_idx, summary)
         torch.save(pixel_cnn_trained_model, os.path.join(results_path, f"pixel_cnn_scale_{scale_idx}.pt"))
-        torch.save(latest_samples, os.path.join(results_path, f"samples_scale_{scale_idx}.pt"))
+        if args.gen_samples:
+            torch.save(latest_samples, os.path.join(results_path, f"samples_scale_{scale_idx}.pt"))
         del pixel_cnn_trained_model
         print(f"Done training scale {scale_idx}")
 
