@@ -271,6 +271,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
 
         self.body = torch.nn.ModuleList([])
+        self.extra_body = torch.nn.ModuleList([])
 
     def init_next_stage(self):
         if len(self.body) == 0:
@@ -286,6 +287,15 @@ class GeneratorHPVAEGAN(nn.Module):
             self.body.append(_first_stage)
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
+
+    def init_extra_layer(self):
+        seq = nn.Sequential()
+        seq.add_module('head', ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size, stride=1))
+        for i in range(self.opt.num_layer):
+            block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
+            seq.add_module('block%d' % (i), block)
+        seq.add_module('tail', nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
+        self.extra_body.append(seq)
 
     def forward(self, video, class_maps_per_scale, noise_amp, noise_init=None, sample_init=None, mode='rand'):
         if sample_init is not None:
@@ -304,6 +314,10 @@ class GeneratorHPVAEGAN(nn.Module):
         vae_out = torch.tanh(vae_out)
 
         x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_maps_per_scale)
+
+        for block in self.extra_body:
+            x_prev_out_residuals = block(x_prev_out)
+            x_prev_out = torch.tanh(x_prev_out + x_prev_out_residuals)
 
         return x_prev_out, vae_out, z_ae
 
