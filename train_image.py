@@ -315,6 +315,7 @@ def train(opt, netG, class_maps_per_scale):
         'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
     opt.saver.save_checkpoint({
+        'number_of_classes': number_of_images,
         'scale': opt.scale_idx,
         'state_dict':  map_classifier.module.state_dict() if using_data_parallel else map_classifier.state_dict(),
         'optimizer': optimizer_map_classifier.state_dict(),

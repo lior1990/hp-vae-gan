@@ -43,8 +43,8 @@ class TensorboardSummary(object):
         norm_range(video_transpose)
         self.writer.add_video('Video/Scale {}/{}'.format(opt.scale_idx, name), video_transpose[:3], global_step)
 
-    def visualize_image(self, opt, global_step, ןimages, name):
-        grid_image = make_grid(ןimages[:3, :, :, :].clone().cpu().data, 3, normalize=True)
+    def visualize_image(self, opt, global_step, images, name, normalize=True):
+        grid_image = make_grid(images[:3, :, :, :].clone().cpu().data, 3, normalize=normalize)
         img_name = 'Image/Scale {}/{}'.format(opt.scale_idx, name)
         if self.neptune_exp:
             self.neptune_exp.log_image(img_name, global_step, y=self.to_image(grid_image))
