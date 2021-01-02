@@ -55,122 +55,13 @@ def calc_classifier_loss(output, class_indices_map, opt):
     return loss, acc
 
 
-def train_reconstruction(opt, netG, class_maps_per_scale):
-    parameter_list = []
-    parameter_list += [
-        {"params": block.parameters(),
-         "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body)//2))} for idx, block in enumerate(netG.extra_body)]
-
-    optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
-
-    # Parallel
-
-    if opt.device == 'cuda' and torch.cuda.device_count() > 1 and opt.data_parallel_start_scale <= opt.scale_idx:
-        print(f"Using data parallel: {torch.cuda.device_count()} GPUs")
-        G_curr = torch.nn.DataParallel(netG)
-    else:
-        G_curr = netG
-
-    progressbar_args = {
-        "iterable": range(opt.niter),
-        "desc": "Training scale [{}/{}]".format(opt.scale_idx + 1, opt.stop_scale + 1),
-        "train": True,
-        "offset": 0,
-        "logging_on_update": False,
-        "logging_on_close": True,
-        "postfix": True
-    }
-    epoch_iterator = tools.create_progressbar(**progressbar_args)
-
-    iterator = iter(data_loader)
-
-    for iteration in epoch_iterator:
-        try:
-            data = next(iterator)
-        except StopIteration:
-            iterator = iter(opt.data_loader)
-            data = next(iterator)
-
-        if opt.scale_idx > 0:
-            idx, real, real_zero = data
-        else:
-            idx, real = data
-            real_zero = real
-
-        idx = idx.to(opt.device)
-        idx = idx.unsqueeze(dim=1)
-        real = real.to(opt.device)
-        real_zero = real_zero.to(opt.device)
-
-        initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [7, 11]
-        opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
-
-        noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
-
-        class_maps_per_scale_for_batch = [class_maps[idx.view(-1)] for class_maps in class_maps_per_scale]
-        ############################
-        # (1) Update VAE network
-        ###########################
-        generated, generated_vae, _ = G_curr(real_zero, class_maps_per_scale_for_batch, opt.Noise_Amps, mode="rec")
-
-        rec_loss = opt.rec_loss(generated, real)
-        # todo: add reconstruction loss on fake as well?
-
-        G_curr.zero_grad()
-        rec_loss.backward()
-        torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
-        optimizerG.step()
-
-        # Update progress bar
-        epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}]'.format(
-            opt.scale_idx + 1, opt.stop_scale + 1,
-            iteration + 1, opt.niter,
-        ))
-
-        if opt.visualize:
-            # Tensorboard
-            opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
-
-            if iteration % opt.print_interval == 0:
-                with torch.no_grad():
-                    # todo: plot images with classifier's map instead of real maps
-
-                    fake_var = []
-                    fake_vae_var = []
-                    for _ in range(3):
-                        noise_init = utils.generate_noise(ref=noise_init)
-                        fake, fake_vae, _ = G_curr(real_zero, class_maps_per_scale_for_batch, opt.Noise_Amps,
-                                                   noise_init=noise_init, mode="rand")
-                        fake_var.append(fake)
-                        fake_vae_var.append(fake_vae)
-                    fake_var = torch.cat(fake_var, dim=0)
-                    fake_vae_var = torch.cat(fake_vae_var, dim=0)
-
-                opt.summary.visualize_image(opt, iteration, real, 'Real')
-                opt.summary.visualize_image(opt, iteration, generated, 'Generated')
-                opt.summary.visualize_image(opt, iteration, generated_vae, 'Generated VAE')
-                opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
-                opt.summary.visualize_image(opt, iteration, fake_vae_var, 'Fake VAE var')
-
-    epoch_iterator.close()
-
-    # Save data
-    opt.saver.save_checkpoint({
-        'scale': opt.scale_idx,
-        'state_dict': netG.state_dict(),
-        'optimizer': optimizerG.state_dict(),
-        'noise_amps': opt.Noise_Amps,
-    }, 'netG_extra.pth')
-
-
 def train(opt, netG, class_maps_per_scale):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
         if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
             D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx))['state_dict'])
         elif opt.vae_levels < opt.scale_idx:
             D_curr.load_state_dict(
                 torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
@@ -181,8 +72,12 @@ def train(opt, netG, class_maps_per_scale):
     number_of_images = len(os.listdir(opt.image_path))
     map_classifier = networks_2d.WDiscriminator2DMulti(opt, number_of_images).to(opt.device)
     if opt.scale_idx > 0:
-        map_classifier.load_state_dict(
-            torch.load('{}/classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
+        if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
+            map_classifier.load_state_dict(
+                torch.load('{}/classifier_{}.pth'.format(opt.resume_dir, opt.scale_idx))['state_dict'])
+        else:
+            map_classifier.load_state_dict(
+                torch.load('{}/classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
 
     optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
 
@@ -601,6 +496,7 @@ if __name__ == '__main__':
         for _ in range(opt.scale_idx):
             netG.init_next_stage()
         netG.load_state_dict(checkpoint['state_dict'])
+        netG.to(device)
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
 
@@ -633,7 +529,7 @@ if __name__ == '__main__':
     if opt.extra_layer:
         netG.init_extra_layer()
         netG.to(device)
-        train_reconstruction(opt, netG, class_maps_per_scale)
+        train(opt, netG, class_maps_per_scale)
 
     if use_neptune:
         neptune_exp.__exit__(None, None, None)
