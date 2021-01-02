@@ -31,18 +31,6 @@ def parse_arguments():
     return args
 
 
-def generate_samples(args, pixel_cnn_model, scale_idx):
-    dataset = ConditionedPixelCNNDataset(args.generated_dataset_path, scale_idx, 1)
-    test_batch_size = len(dataset)
-    data_loader = DataLoader(dataset, batch_size=test_batch_size, shuffle=False, num_workers=0)
-
-    img, _ = next(iter(data_loader))
-    img = img.to(args.device)
-
-    img_map = pixel_cnn_model.generate(img, shape=(img.shape[-2], img.shape[-1]), batch_size=test_batch_size)
-    return img_map, img
-
-
 def generate_single_scale(args, scale_idx: int):
     pixel_cnn_model = GatedPixelCNN(args.number_of_classes, args.hidden_dim, args.n_layers)
     pixel_cnn_model.load_state_dict(torch.load(os.path.join(args.model_directory, f"pixel_cnn_scale_{scale_idx}.pt"),
@@ -50,16 +38,26 @@ def generate_single_scale(args, scale_idx: int):
     pixel_cnn_model.to(args.device)
     pixel_cnn_model.eval()
 
-    samples_and_reals = []
+    samples_and_real_list = []
+
+    dataset = ConditionedPixelCNNDataset(args.generated_dataset_path, scale_idx, 1)
 
     with torch.no_grad():
-        for _ in range(args.samples_to_generate):
-            start_time = time.time()
-            print("Generating samples...")
-            samples_and_reals.append(generate_samples(args, pixel_cnn_model, scale_idx))
-            print(f"Done generating samples in {time.time() - start_time} seconds")
+        for img_idx in range(len(dataset)):
+            img, _ = dataset[img_idx]
+            img = img.to(args.device)
 
-    return samples_and_reals
+            print(f"Generating samples for img {img_idx}...")
+            start_time = time.time()
+            img_batch_for_generation = torch.stack([img] * args.samples_to_generate).to(args.device)
+            samples_batch = pixel_cnn_model.generate(img_batch_for_generation,
+                                                     shape=(img.shape[-2], img.shape[-1]),
+                                                     batch_size=len(img_batch_for_generation))
+            samples_list = torch.split(samples_batch, 1)
+            print(f"Done generating samples in {time.time() - start_time} seconds for img {img_idx}")
+            samples_and_real_list.append((samples_list, img))
+
+    return samples_and_real_list
 
 
 def main():
@@ -70,8 +68,8 @@ def main():
 
     for scale_idx in range(args.scale_limit+1):
         print(f"Starting to generate samples for scale {scale_idx}")
-        samples_and_reals = generate_single_scale(args, scale_idx)
-        torch.save(samples_and_reals, os.path.join(samples_path, f"samples_and_reals_{scale_idx}.pt"))
+        samples_and_real_list = generate_single_scale(args, scale_idx)
+        torch.save(samples_and_real_list, os.path.join(samples_path, f"samples_and_reals_{scale_idx}.pt"))
         print(f"Done scale {scale_idx}")
 
 
