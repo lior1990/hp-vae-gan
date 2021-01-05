@@ -1,7 +1,8 @@
+from matplotlib import pyplot as plt
 import math
 import os
 from pathlib import Path
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -47,10 +48,9 @@ def train_epoch(args, pixel_cnn_model, data_loader, criterion, optimizer, summar
     total_iterations = math.ceil(len(data_loader.dataset) / args.batch_size)
     progress_iterator = tqdm(iterable=enumerate(data_loader), total=total_iterations)
 
-    for batch_idx, (img, img_map) in progress_iterator:
+    for batch_idx, (_, img_map) in progress_iterator:
         img_map = img_map.squeeze(dim=1).type(torch.LongTensor).to(args.device)
-        img = img.to(args.device)
-        logits = pixel_cnn_model(img_map, img)
+        logits = pixel_cnn_model(img_map)
         logits = logits.permute(0, 2, 3, 1).contiguous()
 
         # todo: set cross-entropy loss for images?
@@ -77,16 +77,29 @@ def generate_samples(args, pixel_cnn_model, scale_idx, summary, epoch):
 
     opt = NamedTuple("dummy_opt", [("scale_idx", int)])(scale_idx)
 
-    img, _ = next(iter(data_loader))
-    img = img.to(args.device)
+    img, img_map = next(iter(data_loader))
 
     if epoch == 0:
         # save real images only once
         summary.visualize_image(opt, epoch, img, "real image")
+        visualize_maps(img_map.squeeze(dim=1), summary, "real map")
 
-    img_map = pixel_cnn_model.generate(img, shape=(img.shape[-2], img.shape[-1]), batch_size=test_batch_size)
-    summary.visualize_image(opt, epoch, img_map.unsqueeze(dim=1)/255, f"generated samples img", normalize=False)
-    return img_map
+    generated_img_map = pixel_cnn_model.generate(shape=(img_map.shape[-2], img_map.shape[-1]), batch_size=test_batch_size)
+    visualize_maps(generated_img_map, summary, "generated samples img", epoch)
+    return generated_img_map
+
+
+def visualize_maps(img_map: "torch.LongTensor", summary, name: str, idx: "Optional[int]" = None):
+    figure = plt.figure(figsize=(10, 10))
+    number_of_plots = img_map.shape[0]
+    axes = figure.subplots(1, number_of_plots)
+
+    for plot_idx in range(number_of_plots):
+        axes[plot_idx].set_xticks([])
+        axes[plot_idx].set_yticks([])
+        axes[plot_idx].imshow(img_map[plot_idx])
+    plt.close(figure)
+    summary.writer.add_figure(name, figure, global_step=idx)
 
 
 def train_single_scale(args, scale_idx: int, summary) -> "Tuple[GatedPixelCNN, torch.Tensor]":
