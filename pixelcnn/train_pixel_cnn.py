@@ -1,3 +1,7 @@
+import matplotlib
+
+matplotlib.use("Agg")
+
 from matplotlib import pyplot as plt
 import math
 import os
@@ -90,15 +94,14 @@ def generate_samples(args, pixel_cnn_model, scale_idx, summary, epoch):
 
 
 def visualize_maps(img_map: "torch.LongTensor", summary, name: str, idx: "Optional[int]" = None):
-    figure = plt.figure(figsize=(10, 10))
     number_of_plots = img_map.shape[0]
-    axes = figure.subplots(1, number_of_plots)
+    figure, axes = plt.subplots(1, number_of_plots)
 
     for plot_idx in range(number_of_plots):
         axes[plot_idx].set_xticks([])
         axes[plot_idx].set_yticks([])
-        axes[plot_idx].imshow(img_map[plot_idx])
-    plt.close(figure)
+        axes[plot_idx].imshow(img_map[plot_idx].cpu())
+    plt.close("all")
     summary.writer.add_figure(name, figure, global_step=idx)
 
 
@@ -137,7 +140,12 @@ def main():
 
     for scale_idx in range(number_of_scales):
         print(f"Starting to train scale {scale_idx}")
-        pixel_cnn_trained_model, latest_samples = train_single_scale(args, scale_idx, summary)
+        try:
+            pixel_cnn_trained_model, latest_samples = train_single_scale(args, scale_idx, summary)
+        except Exception as e:
+            print(f"Failed to train scale {scale_idx}")
+            print(e)
+            raise
         torch.save(pixel_cnn_trained_model, os.path.join(results_path, f"pixel_cnn_scale_{scale_idx}.pt"))
         if args.gen_samples:
             torch.save(latest_samples, os.path.join(results_path, f"samples_scale_{scale_idx}.pt"))
