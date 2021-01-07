@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 
 import torch
-from torch.utils.data.dataloader import DataLoader
 import time
 
 from pixelcnn.pixel_cnn_dataset import ConditionedPixelCNNDataset
@@ -44,18 +43,15 @@ def generate_single_scale(args, scale_idx: int):
 
     with torch.no_grad():
         for img_idx in range(len(dataset)):
-            img, _ = dataset[img_idx]
-            img = img.to(args.device)
+            img, img_mask = dataset[img_idx]
 
             print(f"Generating samples for img {img_idx}...")
             start_time = time.time()
-            img_batch_for_generation = torch.stack([img] * args.samples_to_generate).to(args.device)
-            samples_batch = pixel_cnn_model.generate(img_batch_for_generation,
-                                                     shape=(img.shape[-2], img.shape[-1]),
-                                                     batch_size=len(img_batch_for_generation))
+            samples_batch = pixel_cnn_model.generate(shape=(img_mask.shape[-2], img_mask.shape[-1]),
+                                                     batch_size=args.samples_to_generate)
             samples_list = torch.split(samples_batch, 1)
             print(f"Done generating samples in {time.time() - start_time} seconds for img {img_idx}")
-            samples_and_real_list.append((samples_list, img))
+            samples_and_real_list.append((samples_list, (img, img_mask)))
 
     return samples_and_real_list
 
