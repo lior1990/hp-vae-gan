@@ -263,15 +263,7 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
-
-        # AE decoder:
-        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
-        self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
-        self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
-
         self.body = torch.nn.ModuleList([])
-        self.extra_body = torch.nn.ModuleList([])
 
     def init_next_stage(self):
         if len(self.body) == 0:
@@ -288,60 +280,39 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def init_extra_layer(self):
-        seq = nn.Sequential()
-        seq.add_module('head', ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size, stride=1))
-        for i in range(self.opt.num_layer):
-            block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
-            seq.add_module('block%d' % (i), block)
-        seq.add_module('tail', nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
-        self.extra_body.append(seq)
+    def forward(self, class_maps_per_scale, noise_amp, mode='rand', verbose=False):
+        zero_scale_map_shape = class_maps_per_scale[0].shape
+        zero_scale_size = (zero_scale_map_shape[0], self.opt.nc_im, zero_scale_map_shape[-2], zero_scale_map_shape[-1])
 
-    def forward(self, video, class_maps_per_scale, noise_amp, noise_init=None, sample_init=None, mode='rand'):
-        if sample_init is not None:
-            assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
+        if mode == "rand":
+            noise = utils.generate_noise(size=zero_scale_size).to(self.opt.device) * noise_amp[0]
+        else:
+            # reconstruction mode
+            noise = torch.zeros(*zero_scale_size, device=self.opt.device)
 
-        class_maps_for_encoder = class_maps_per_scale[0]
-        z_ae = self.encode(torch.cat([video, class_maps_for_encoder], dim=1))
+        x_prev = self.body[0](torch.cat([noise, class_maps_per_scale[0]], dim=1))
+        x_prev_out = torch.tanh(x_prev + noise)
 
-        if noise_init is not None:
-            z_ae += noise_init
+        results = [x_prev_out]
 
-        # decode
-        vae_out = self.decoder_head(z_ae)
-        vae_out = self.decoder_base(vae_out)
-        vae_out = self.decoder_tail(vae_out)
-        vae_out = torch.tanh(vae_out)
-
-        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_maps_per_scale)
-
-        for block in self.extra_body:
-            x_prev_out_residuals = block(x_prev_out)
-            x_prev_out = torch.tanh(x_prev_out + x_prev_out_residuals)
-
-        return x_prev_out, vae_out, z_ae
-
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_maps_per_scale):
-        for idx, block in enumerate(self.body[start_idx:], start_idx):
-            # todo: remove this so encoder will train at all scales?
-            if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
-                x_prev_out.detach_()
-
+        start_index = 1
+        for idx, block in enumerate(self.body[start_index:], start=start_index):
             # Upscale
-            x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+            x_prev_out_up = utils.upscale_2d(x_prev_out, idx, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev_forward = x_prev_out_up + noise * noise_amp[idx + 1]
+                x_prev_forward = x_prev_out_up + noise * noise_amp[idx]
             else:
                 x_prev_forward = x_prev_out_up
 
-            x_prev = block(torch.cat([x_prev_forward, class_maps_per_scale[idx+1]], dim=1))
+            x_prev = block(torch.cat([x_prev_forward, class_maps_per_scale[idx]], dim=1))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+            results.append(x_prev_out)
 
-        return x_prev_out
+        return results if verbose else results[-1]
 
 
 class GeneratorVAE_nb(nn.Module):
