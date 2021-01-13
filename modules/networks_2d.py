@@ -263,12 +263,15 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        self.encode = Encode2DAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
+        self.encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
 
-        # AE decoder:
-        self.decoder_head = Conv2DUpsample(opt.latent_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2)
-        self.decoder_base = Conv2DUpsample(N, N, opt.ker_size, 1, opt.padd_size, size=(22, 33))
-        self.decoder_tail = nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.padd_size)
+        # Normal Decoder
+        self.decoder = nn.Sequential()
+        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim+1, N, opt.ker_size, opt.padd_size, stride=1))
+        for i in range(opt.num_layer):
+            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+            self.decoder.add_module('block%d' % (i), block)
+        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
         self.body = torch.nn.ModuleList([])
         self.extra_body = torch.nn.ModuleList([])
@@ -297,21 +300,17 @@ class GeneratorHPVAEGAN(nn.Module):
         seq.add_module('tail', nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
         self.extra_body.append(seq)
 
-    def forward(self, video, class_maps_per_scale, noise_amp, noise_init=None, sample_init=None, mode='rand'):
-        if sample_init is not None:
-            assert len(self.body) > sample_init[0], "Strating index must be lower than # of body blocks"
-
+    def forward(self, video, class_maps_per_scale, noise_amp, noise_init=None, mode='rand'):
         class_maps_for_encoder = class_maps_per_scale[0]
-        z_ae = self.encode(torch.cat([video, class_maps_for_encoder], dim=1))
 
-        if noise_init is not None:
-            z_ae += noise_init
+        if noise_init is None:
+            mu, logvar = self.encode(torch.cat([video, class_maps_for_encoder], dim=1))
+            z_vae = reparameterize(mu, logvar, self.training)
+        else:
+            mu, logvar = None, None
+            z_vae = noise_init
 
-        # decode
-        vae_out = self.decoder_head(z_ae)
-        vae_out = self.decoder_base(vae_out)
-        vae_out = self.decoder_tail(vae_out)
-        vae_out = torch.tanh(vae_out)
+        vae_out = torch.tanh(self.decoder(torch.cat([z_vae, class_maps_for_encoder], dim=1)))
 
         x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode, class_maps_per_scale)
 
@@ -319,12 +318,12 @@ class GeneratorHPVAEGAN(nn.Module):
             x_prev_out_residuals = block(x_prev_out)
             x_prev_out = torch.tanh(x_prev_out + x_prev_out_residuals)
 
-        return x_prev_out, vae_out, z_ae
+        return x_prev_out, vae_out, (mu, logvar)
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, class_maps_per_scale):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # todo: remove this so encoder will train at all scales?
-            if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
+            if not self.opt.train_encoder and self.opt.vae_levels == idx + 1 and not self.opt.train_all:
                 x_prev_out.detach_()
 
             # Upscale

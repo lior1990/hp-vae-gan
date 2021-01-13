@@ -7,8 +7,6 @@ import utils
 import random
 import os
 
-import neptune
-
 from utils import logger, tools
 import logging
 import colorama
@@ -20,20 +18,13 @@ import torch.optim as optim
 
 from modules import networks_2d
 from modules.losses import kl_criterion
-from modules.utils import calc_gradient_penalty, pad_with_cls
+from modules.utils import calc_gradient_penalty
 from datasets.image import SingleImageDataset, MultipleImageDataset
 
 clear = colorama.Style.RESET_ALL
 blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
 green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
-
-use_neptune = True
-try:
-    neptune.init(project_qualified_name='lior.tau/ff-singan')
-except Exception as e:
-    print(e)
-    use_neptune = False
 
 log_softmax = torch.nn.LogSoftmax(dim=1)
 
@@ -91,14 +82,13 @@ def train(opt, netG, class_maps_per_scale):
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-train_depth:])]
-            # todo: add decoder at all scales?
-            # parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+            if opt.train_encoder:
+                parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
         else:
             # VAE
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder_head.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder_base.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder_tail.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               ]
             parameter_list += [
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
@@ -171,7 +161,7 @@ def train(opt, netG, class_maps_per_scale):
         optimizer_map_classifier.step()
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [7, 11]
+        initial_size = [int(initial_size * opt.ar), initial_size]
         opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
 
         noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
@@ -208,7 +198,7 @@ def train(opt, netG, class_maps_per_scale):
         ###########################
         total_loss = 0
 
-        generated, generated_vae, _ = G_curr(real_zero, class_maps_per_scale_for_batch, opt.Noise_Amps, mode="rec")
+        generated, generated_vae, (mu, logvar) = G_curr(real_zero, class_maps_per_scale_for_batch, opt.Noise_Amps, mode="rec")
 
         generated_classifier_output = map_classifier(generated)
         err_classifier, _ = calc_classifier_loss(generated_classifier_output, class_indices_map, opt)
@@ -217,7 +207,8 @@ def train(opt, netG, class_maps_per_scale):
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real) + opt.rec_loss(generated_vae, real_zero)
-            vae_loss = opt.rec_weight * rec_vae_loss
+            kl_loss = kl_criterion(mu, logvar)
+            vae_loss = opt.rec_weight * rec_vae_loss + opt.kl_weight * kl_loss
 
             total_loss += vae_loss
         else:
@@ -376,6 +367,7 @@ if __name__ == '__main__':
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', action='store_true', default=False, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
+    parser.add_argument('--train-encoder', action='store_true', default=False, help='train encoder in all scales')
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
@@ -391,9 +383,7 @@ if __name__ == '__main__':
     parser.add_argument('--print-interval', type=int, default=100, help='print interva')
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
-    parser.add_argument('--tag', type=str, default='', help='neptune ai tag')
     parser.add_argument('--data-parallel-start-scale', type=int, default=-1, help='In what scale should we start to use data parallel')
-    parser.add_argument("--extra-layer", default=False, action="store_true", help="Train with extra layer for refinement")
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -408,12 +398,7 @@ if __name__ == '__main__':
     opt.saver = utils.ImageSaver(opt)
 
     # Define Tensorboard Summary
-    if use_neptune and opt.tag:
-        neptune_exp = neptune.create_experiment(name=opt.checkname, params=opt.__dict__, tags=[opt.tag]).__enter__()
-        opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir, neptune_exp=neptune_exp)
-    else:
-        use_neptune = False
-        opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir)
+    opt.summary = utils.TensorboardSummary(opt.saver.experiment_dir)
 
     logger.configure_logging(os.path.abspath(os.path.join(opt.saver.experiment_dir, 'logbook.txt')))
 
@@ -525,11 +510,3 @@ if __name__ == '__main__':
 
         # Increase scale
         opt.scale_idx += 1
-
-    if opt.extra_layer:
-        netG.init_extra_layer()
-        netG.to(device)
-        train(opt, netG, class_maps_per_scale)
-
-    if use_neptune:
-        neptune_exp.__exit__(None, None, None)
