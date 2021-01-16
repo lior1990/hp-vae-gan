@@ -90,6 +90,26 @@ class FeatureExtractor(nn.Sequential):
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
 
 
+class Encode2DAE(nn.Module):
+    def __init__(self, opt, out_dim: int, latent_spatial_dimensions: "Tuple[int, int]", num_blocks=2):
+        super(Encode2DAE, self).__init__()
+
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.max_pool2d = torch.nn.MaxPool2d(opt.ker_size)
+        self.conv_pre_resize = ConvBlock2D(opt.nfc, out_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False)
+        self.conv_post_resize = ConvBlock2D(out_dim, out_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False)
+
+        self.latent_spatial_dim = latent_spatial_dimensions
+
+    def forward(self, x):
+        features = self.features(x)
+        features = self.max_pool2d(features)
+        z = self.conv_pre_resize(features)
+        z = nn.functional.interpolate(z, size=self.latent_spatial_dim)
+        z = self.conv_post_resize(z)
+        return z
+
+
 class Encode2DVAE(nn.Module):
     def __init__(self, opt, out_dim=None, num_blocks=2):
         super(Encode2DVAE, self).__init__()
@@ -251,9 +271,6 @@ class GeneratorHPVAEGAN(nn.Module):
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
-            if self.opt.vae_levels == idx + 1 and not self.opt.train_all:
-                x_prev_out.detach_()
-
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
 
