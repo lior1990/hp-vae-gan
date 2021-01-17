@@ -1,5 +1,4 @@
 import matplotlib
-from torch.autograd import Variable
 
 from modules.networks_2d import Encode2DAE
 
@@ -241,6 +240,7 @@ if __name__ == '__main__':
     for _ in range(opt.scale_idx):
         netG.init_next_stage()
     netG.load_state_dict(checkpoint['state_dict'])
+    netG.to(opt.device)
 
     disable_grads = [netG.encode, netG.decoder, netG.body]
     for dg in disable_grads:
