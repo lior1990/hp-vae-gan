@@ -31,7 +31,6 @@ log_softmax = torch.nn.LogSoftmax(dim=1)
 def calc_classifier_loss(output, class_indices_map, opt):
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    # convert height and width to be part of the "batch" for the cross entropy loss input expected shape
     target = class_indices_map.squeeze(dim=1).type(torch.LongTensor).to(opt.device)
 
     # input shape: (batch, channel), target shape: (batch)
@@ -45,19 +44,7 @@ def calc_classifier_loss(output, class_indices_map, opt):
     return loss, acc
 
 
-def train(opt, netG, class_maps_per_scale):
-    D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
-
-    if opt.netG != '' and opt.resumed_idx != -1:
-        D_curr.load_state_dict(
-            torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
-    elif opt.scale_idx > 0:
-        D_curr.load_state_dict(
-            torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
-
-    # Current optimizers
-    optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
-
+def train_classifier(opt):
     number_of_images = len(os.listdir(opt.image_path))
     map_classifier = networks_2d.WDiscriminator2DMulti(opt, number_of_images).to(opt.device)
     if opt.scale_idx > 0:
@@ -69,6 +56,88 @@ def train(opt, netG, class_maps_per_scale):
                 torch.load('{}/classifier_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
 
     optimizer_map_classifier = optim.Adam(map_classifier.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
+
+    if opt.device == 'cuda' and torch.cuda.device_count() > 1 and opt.data_parallel_start_scale <= opt.scale_idx:
+        using_data_parallel = True
+        print(f"Using data parallel: {torch.cuda.device_count()} GPUs")
+        map_classifier = torch.nn.DataParallel(map_classifier)
+    else:
+        using_data_parallel = False
+
+    progressbar_args = {
+        "iterable": range(opt.niter),
+        "desc": "Training scale classifier [{}/{}]".format(opt.scale_idx + 1, opt.stop_scale + 1),
+        "train": True,
+        "offset": 0,
+        "logging_on_update": False,
+        "logging_on_close": True,
+        "postfix": True
+    }
+    epoch_iterator = tools.create_progressbar(**progressbar_args)
+
+    iterator = iter(data_loader)
+
+    for iteration in epoch_iterator:
+        try:
+            data = next(iterator)
+        except StopIteration:
+            iterator = iter(opt.data_loader)
+            data = next(iterator)
+
+        if opt.scale_idx > 0:
+            idx, real, real_zero = data
+        else:
+            idx, real = data
+
+        idx = idx.to(opt.device)
+        idx = idx.unsqueeze(dim=1)
+        real = real.to(opt.device)
+
+        map_classifier.zero_grad()
+        classifier_output = map_classifier(real)
+        class_indices_map = torch.full((idx.shape[0], 1, real.shape[2], real.shape[3]), 1,
+                                       device=opt.device) * idx.view(-1, 1, 1, 1)
+        classifier_loss, classifier_accuracy = calc_classifier_loss(classifier_output, class_indices_map, opt)
+        classifier_loss.backward()
+        optimizer_map_classifier.step()
+
+        # Update progress bar
+        epoch_iterator.set_description('Scale [{}/{}], Classifier Iteration [{}/{}]'.format(
+            opt.scale_idx + 1, opt.stop_scale + 1,
+            iteration + 1, opt.niter,
+        ))
+
+        if opt.visualize:
+            # Tensorboard
+            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier loss', classifier_loss.item(), iteration)
+            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier accuracy', classifier_accuracy.item(), iteration)
+
+    epoch_iterator.close()
+
+    # Save data
+    opt.saver.save_checkpoint({
+        'scale': opt.scale_idx,
+        'state_dict': map_classifier.module.state_dict() if using_data_parallel else map_classifier.state_dict(),
+        'optimizer': optimizer_map_classifier.state_dict(),
+    }, 'classifier_{}.pth'.format(opt.scale_idx))
+
+    return map_classifier
+
+
+def train(opt, netG, map_classifier, class_maps_per_scale, fake_class_maps_per_scale):
+    number_of_images = len(os.listdir(opt.image_path))
+
+    D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
+
+    if opt.netG != '' and opt.resumed_idx != -1:
+        D_curr.load_state_dict(
+            torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+    elif opt.scale_idx > 0:
+        D_curr.load_state_dict(
+            torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
+
+    # Current optimizers
+    optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
 
     parameter_list = []
     # Generator Adversary
@@ -100,7 +169,6 @@ def train(opt, netG, class_maps_per_scale):
         using_data_parallel = True
         print(f"Using data parallel: {torch.cuda.device_count()} GPUs")
         G_curr = torch.nn.DataParallel(netG)
-        map_classifier = torch.nn.DataParallel(map_classifier)
         D_curr = torch.nn.DataParallel(D_curr)
     else:
         using_data_parallel = False
@@ -135,14 +203,6 @@ def train(opt, netG, class_maps_per_scale):
         idx = idx.to(opt.device)
         idx = idx.unsqueeze(dim=1)
         real = real.to(opt.device)
-        real_zero = real_zero.to(opt.device)
-
-        map_classifier.zero_grad()
-        classifier_output = map_classifier(real)
-        class_indices_map = torch.full((idx.shape[0], 1, real.shape[2], real.shape[3]), 1, device=opt.device) * idx.view(-1, 1, 1, 1)
-        classifier_loss, classifier_accuracy = calc_classifier_loss(classifier_output, class_indices_map, opt)
-        classifier_loss.backward()
-        optimizer_map_classifier.step()
 
         ############################
         # calculate noise_amp
@@ -154,6 +214,7 @@ def train(opt, netG, class_maps_per_scale):
             class_maps_per_scale.append(full_class_indices_real)
 
         class_maps_per_scale_for_batch = [class_maps[idx.view(-1)] for class_maps in class_maps_per_scale]
+        fake_class_maps_per_scale_for_batch = [class_maps[idx.view(-1)] for class_maps in fake_class_maps_per_scale]
 
         if iteration == 0:
             if opt.const_amp:
@@ -177,11 +238,6 @@ def train(opt, netG, class_maps_per_scale):
         total_loss = 0
 
         generated = G_curr(class_maps_per_scale_for_batch, opt.Noise_Amps, mode="rec")
-
-        generated_classifier_output = map_classifier(generated)
-        err_classifier, _ = calc_classifier_loss(generated_classifier_output, class_indices_map, opt)
-
-        total_loss = err_classifier
 
         ############################
         # (2) Update D network: maximize D(x) + D(G(z))
@@ -220,8 +276,10 @@ def train(opt, netG, class_maps_per_scale):
         errG = -output.mean() * opt.disc_loss_weight
         errG_total += errG
 
-        fake_classifier_output = map_classifier(fake)
-        errG_classifier, _ = calc_classifier_loss(fake_classifier_output, class_indices_map, opt)
+        # train with classifier
+        fake_mix_maps = G_curr(fake_class_maps_per_scale_for_batch, opt.Noise_Amps, mode="rec")
+        fake_classifier_output = map_classifier(fake_mix_maps)
+        errG_classifier, _ = calc_classifier_loss(fake_classifier_output, fake_class_maps_per_scale_for_batch[-1], opt)
         errG_total += errG_classifier
 
         total_loss += errG_total
@@ -244,9 +302,7 @@ def train(opt, netG, class_maps_per_scale):
             opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
             opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
-            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier loss', classifier_loss.item(), iteration)
-            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/Classifier accuracy', classifier_accuracy.item(), iteration)
-            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/G classifier error', err_classifier.item(), iteration)
+            opt.summary.add_scalar(f'Video/Scale {opt.scale_idx}/G classifier error', errG_classifier.item(), iteration)
 
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
@@ -260,23 +316,21 @@ def train(opt, netG, class_maps_per_scale):
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
-                opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
+                opt.summary.visualize_image(opt, iteration, fake_var, 'Fake')
+                opt.summary.visualize_image(opt, iteration, fake_mix_maps, 'Fake mix maps')
+                opt.summary.visualize_image(opt, iteration, fake_class_maps_per_scale_for_batch[-1], 'Fake map')
 
     epoch_iterator.close()
 
     # Save data
     opt.saver.save_checkpoint({'data': opt.Noise_Amps}, 'Noise_Amps.pth')
+    opt.saver.save_checkpoint({'data': fake_class_maps_per_scale}, 'fake_class_maps_per_scale.pth')
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
         'state_dict': netG.state_dict(),
         'optimizer': optimizerG.state_dict(),
         'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
-    opt.saver.save_checkpoint({
-        'scale': opt.scale_idx,
-        'state_dict':  map_classifier.module.state_dict() if using_data_parallel else map_classifier.state_dict(),
-        'optimizer': optimizer_map_classifier.state_dict(),
-    }, 'classifier_{}.pth'.format(opt.scale_idx))
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
         'state_dict': D_curr.module.state_dict() if using_data_parallel else D_curr.state_dict(),
@@ -341,7 +395,6 @@ if __name__ == '__main__':
     parser.add_argument('--print-interval', type=int, default=100, help='print interva')
     parser.add_argument('--visualize', action='store_true', default=False, help='visualize using tensorboard')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables cuda')
-    parser.add_argument('--tag', type=str, default='', help='neptune ai tag')
     parser.add_argument('--data-parallel-start-scale', type=int, default=-1, help='In what scale should we start to use data parallel')
 
     parser.set_defaults(hflip=False)
@@ -428,6 +481,7 @@ if __name__ == '__main__':
     netG = getattr(networks_2d, opt.generator)(opt).to(opt.device)
 
     class_maps_per_scale = []
+    fake_class_maps_per_scale = []
 
     if opt.netG != '':
         if not os.path.isfile(opt.netG):
@@ -442,6 +496,8 @@ if __name__ == '__main__':
         netG.to(device)
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
+        fake_class_maps_per_scale = torch.load(os.path.join(opt.resume_dir, 'fake_class_maps_per_scale.pth'))['data']
+        fake_class_maps_per_scale = [x.to(opt.device) for x in fake_class_maps_per_scale]
 
         for scale_idx in range(opt.scale_idx+1):
             opt.scale_idx = scale_idx
@@ -463,7 +519,25 @@ if __name__ == '__main__':
         netG.init_next_stage()
         netG.to(device)
 
-        train(opt, netG, class_maps_per_scale)
+        classifier = train_classifier(opt)
+        classifier.eval()
+
+        with torch.no_grad():
+            maps = []
+            for i in range(dataset.num_of_images):
+                real = dataset[i][1].unsqueeze(dim=0).to(opt.device)
+                real_classifier_output = classifier(real)
+                real.to("cpu")
+                # NOTE: there a strong assumption here that the classifier is correct, i.e. the argmax is the correct class
+                # therefore, taking the SECOND argmax will get a mix of other classes
+                second_best_map = torch.topk(log_softmax(real_classifier_output), k=2, dim=1).indices[:, 1, :, :]
+                maps.append(second_best_map)
+            fake_class_maps_per_scale.append(torch.stack(maps).type(torch.FloatTensor).to(opt.device))
+            del maps
+
+        train(opt, netG, classifier, class_maps_per_scale, fake_class_maps_per_scale)
+
+        classifier.to("cpu")
 
         # Increase scale
         opt.scale_idx += 1
