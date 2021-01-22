@@ -25,8 +25,8 @@ def weights_init(m):
 
 def get_activation(act):
     activations = {
-        "relu": nn.ReLU(inplace=True),
-        "lrelu": nn.LeakyReLU(0.2, inplace=True),
+        "relu": nn.ReLU(),
+        "lrelu": nn.LeakyReLU(0.2),
         "elu": nn.ELU(alpha=1.0, inplace=True),
         "prelu": nn.PReLU(num_parameters=1, init=0.25),
         "selu": nn.SELU(inplace=True)
@@ -204,7 +204,7 @@ class WDiscriminator2D(nn.Module):
 
         self.opt = opt
         N = int(opt.nfc)
-        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
+        self.head = ConvBlock2DSN(opt.nc_im+1, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=True, act='lrelu')
@@ -228,14 +228,6 @@ class GeneratorHPVAEGAN(nn.Module):
 
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
         self.vector_quantization = VectorQuantizer(opt.n_embeddings, opt.embedding_dim, opt.vqvae_beta)
-        self.decoder = nn.Sequential()
-
-        # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
-        for i in range(opt.num_layer):
-            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
-            self.decoder.add_module('block%d' % (i), block)
-        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
         self.body = torch.nn.ModuleList([])
 
@@ -243,7 +235,7 @@ class GeneratorHPVAEGAN(nn.Module):
         if len(self.body) == 0:
             _first_stage = nn.Sequential()
             _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
+                                    ConvBlock2D(self.opt.embedding_dim+self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
                                                 stride=1))
             for i in range(self.opt.num_layer):
                 block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
@@ -254,30 +246,42 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, img, noise_amp, noise_init=None, mode='rand'):
+    def forward(self, img, noise_amp, noise_init=None, mode='rand', verbose=False):
         z_e = self.vqvae_encode(img)
         embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e)
-        vqvae_out = torch.tanh(self.decoder(z_q))
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
+        zero_scale_size = (img.shape[0], self.opt.nc_im, z_q.shape[-2], z_q.shape[-1])
 
-        return x_prev_out, embedding_loss
+        if mode == "rand":
+            noise = utils.generate_noise(size=zero_scale_size).to(self.opt.device) * noise_amp[0]
+        else:
+            # reconstruction mode
+            noise = torch.zeros(*zero_scale_size, device=self.opt.device)
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
-        for idx, block in enumerate(self.body[start_idx:], start_idx):
+        x_prev = self.body[0](torch.cat([noise, z_q], dim=1))
+        x_prev_out = torch.tanh(x_prev + noise)
+
+        results = [x_prev_out]
+
+        start_index = 1
+        for idx, block in enumerate(self.body[start_index:], start=start_index):
             # Upscale
-            x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+            x_prev_out_up = utils.upscale_2d(x_prev_out, idx, self.opt)
+            z_q = utils.upscale_2d(z_q, idx, self.opt)  # todo: upscale the discrete values and not z_q!
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
+                x_prev_forward = x_prev_out_up + noise * noise_amp[idx]
             else:
-                x_prev = block(x_prev_out_up)
+                x_prev_forward = x_prev_out_up
+
+            x_prev = block(torch.cat([x_prev_forward, z_q], dim=1))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+            results.append(x_prev_out)
 
-        return x_prev_out
+        return (results if verbose else results[-1]), embedding_loss
 
 
 class GeneratorVAE_nb(nn.Module):
