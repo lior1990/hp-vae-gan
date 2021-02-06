@@ -244,7 +244,21 @@ class GeneratorHPVAEGAN(nn.Module):
                                     nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
             self.body.append(_first_stage)
         else:
-            self.body.append(copy.deepcopy(self.body[-1]))
+            if len(self.body) > 1:
+                # copy the weights from the previous layer
+                self.body.append(copy.deepcopy(self.body[-1]))
+            else:
+                # init new layer without 4th channel
+                _first_stage = nn.Sequential()
+                _first_stage.add_module('head',
+                                        ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
+                                                    stride=1))
+                for i in range(self.opt.num_layer):
+                    block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1)
+                    _first_stage.add_module('block%d' % (i), block)
+                _first_stage.add_module('tail',
+                                        nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
+                self.body.append(_first_stage)
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand', verbose=False):
         z_e = self.vqvae_encode(img)
@@ -267,7 +281,7 @@ class GeneratorHPVAEGAN(nn.Module):
         for idx, block in enumerate(self.body[start_index:], start=start_index):
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx, self.opt)
-            z_q = utils.upscale_2d(z_q, idx, self.opt)  # todo: upscale the discrete values and not z_q!
+            # z_q = utils.upscale_2d(z_q, idx, self.opt)  # todo: upscale the discrete values and not z_q!
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
@@ -276,7 +290,7 @@ class GeneratorHPVAEGAN(nn.Module):
             else:
                 x_prev_forward = x_prev_out_up
 
-            x_prev = block(torch.cat([x_prev_forward, z_q], dim=1))
+            x_prev = block(x_prev_forward)
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
             results.append(x_prev_out)

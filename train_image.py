@@ -43,12 +43,14 @@ def train(opt, netG):
     parameter_list = [
         {"params": block.parameters(),
          "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body) - 1 - idx))}
-        for idx, block in enumerate(netG.body)]
-    # VQVAE
-    parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                       {"params": netG.vector_quantization.parameters(),
-                        "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                       ]
+        for idx, block in enumerate(netG.body[-1:])]
+
+    if opt.scale_idx == 0:
+        # VQVAE
+        parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                           {"params": netG.vector_quantization.parameters(),
+                            "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                           ]
 
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
