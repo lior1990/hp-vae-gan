@@ -227,7 +227,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.N = N
 
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = VectorQuantizer(opt.n_embeddings, opt.embedding_dim, opt.vqvae_beta)
+        self.vector_quantization = VectorQuantizer(opt.n_embeddings, opt.embedding_dim, opt.vqvae_beta, opt.n_images)
 
         self.body = torch.nn.ModuleList([])
 
@@ -260,9 +260,9 @@ class GeneratorHPVAEGAN(nn.Module):
                                         nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2))
                 self.body.append(_first_stage)
 
-    def forward(self, img, noise_amp, noise_init=None, mode='rand', verbose=False):
+    def forward(self, img, noise_amp, mask, noise_init=None, mode='rand', verbose=False):
         z_e = self.vqvae_encode(img)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e)
+        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mask)
 
         zero_scale_size = (img.shape[0], self.opt.nc_im, z_q.shape[-2], z_q.shape[-1])
 

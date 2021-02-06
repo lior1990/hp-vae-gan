@@ -102,6 +102,9 @@ def train(opt, netG):
         ############################
         # calculate noise_amp
         ###########################
+        mask = torch.full((real_zero.shape[0], 1, real_zero.shape[2], real_zero.shape[3]), 1,
+                          device=opt.device) * idx.view(-1, 1, 1, 1)
+
         if iteration == 0:
             if opt.const_amp:
                 opt.Noise_Amps.append(1)
@@ -112,7 +115,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mask, mode="rec")
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -121,8 +124,7 @@ def train(opt, netG):
         ############################
         # (1) Update VAE network
         ###########################
-
-        generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mask, mode="rec")
 
         total_loss = embedding_loss
 
@@ -139,7 +141,7 @@ def train(opt, netG):
 
         # train with fake
         #################
-        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+        fake, _ = G_curr(real_zero, opt.Noise_Amps, mask, noise_init=noise_init, mode="rand")
 
         # Train 3D Discriminator
         output = D_curr(pad_with_cls(fake.detach(), idx, opt))
@@ -189,7 +191,7 @@ def train(opt, netG):
                     fake_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, _ = G_curr(real_zero, opt.Noise_Amps, mask, noise_init=noise_init, mode="rand")
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
@@ -339,6 +341,7 @@ if __name__ == '__main__':
 
     opt.dataset = dataset
     opt.data_loader = data_loader
+    opt.n_images = dataset.num_of_images
 
     with logger.LoggingBlock("Commandline Arguments", emph=True):
         for argument, value in sorted(vars(opt).items()):

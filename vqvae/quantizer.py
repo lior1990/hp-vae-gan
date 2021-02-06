@@ -17,16 +17,17 @@ class VectorQuantizer(nn.Module):
     - beta : commitment cost used in loss term, beta * ||z_e(x)-sg[e]||^2
     """
 
-    def __init__(self, n_e, e_dim, beta):
+    def __init__(self, n_e, e_dim, beta, n_images):
         super(VectorQuantizer, self).__init__()
-        self.n_e = n_e
+        self.n_e = n_e * n_images + 1  # add 1 for the zero
         self.e_dim = e_dim
         self.beta = beta
 
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
         self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
+        self.n_images = n_images
 
-    def forward(self, z):
+    def forward(self, z, mask):
         """
         Inputs the output of the encoder network z and maps it to a discrete 
         one-hot vector that is the index of the closest embedding vector e_j
@@ -52,6 +53,8 @@ class VectorQuantizer(nn.Module):
 
         # find closest encodings
         min_encoding_indices = torch.argmin(d, dim=1).unsqueeze(1)
+        mask = ((min_encoding_indices % self.n_images) == mask.permute(0, 2, 3, 1).contiguous().view(-1, self.e_dim)).long()
+        min_encoding_indices *= mask
         min_encodings = torch.zeros(
             min_encoding_indices.shape[0], self.n_e).to(device)
         min_encodings.scatter_(1, min_encoding_indices, 1)
