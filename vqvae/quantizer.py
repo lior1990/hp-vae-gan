@@ -23,7 +23,7 @@ class VectorQuantizer(nn.Module):
         self.e_dim = e_dim
         self.beta = beta
 
-        self.embedding = nn.Embedding(self.n_e, self.e_dim)
+        self.embedding = nn.Embedding(self.n_e, self.e_dim, padding_idx=0)
         self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
         self.n_images = n_images
 
@@ -53,7 +53,8 @@ class VectorQuantizer(nn.Module):
 
         # find closest encodings
         min_encoding_indices = torch.argmin(d, dim=1).unsqueeze(1)
-        mask = ((min_encoding_indices % self.n_images) == mask.permute(0, 2, 3, 1).contiguous().view(-1, self.e_dim)).long()
+        mask += 1  # the images are starting from zero
+        mask = ((min_encoding_indices % (self.n_images + 1)) == mask.permute(0, 2, 3, 1).contiguous().view(-1, self.e_dim)).long()
         min_encoding_indices *= mask
         min_encodings = torch.zeros(
             min_encoding_indices.shape[0], self.n_e).to(device)
