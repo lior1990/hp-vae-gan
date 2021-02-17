@@ -50,12 +50,13 @@ def train(opt, netG):
         parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                            {"params": netG.vector_quantization.parameters(),
                             "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                           {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                            ]
 
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    if opt.device == 'cuda' and torch.cuda.device_count() > 1:
         G_curr = torch.nn.DataParallel(netG)
         D_curr = torch.nn.DataParallel(D_curr)
     else:
@@ -122,9 +123,19 @@ def train(opt, netG):
         # (1) Update VAE network
         ###########################
 
-        generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        if opt.scale_idx == 0:
+            receptive_field = 11
+            unfold = torch.nn.Unfold(receptive_field, padding=opt.padd_size)
+            real_zero_patches = unfold(real_zero).view(-1, opt.nc_im, receptive_field, receptive_field)
 
-        total_loss = embedding_loss
+            generated_patches, embedding_loss = G_curr(real_zero_patches, opt.Noise_Amps, mode="rec")
+
+            rec_loss = opt.rec_loss(generated_patches, real_zero_patches)
+
+            total_loss = embedding_loss + opt.rec_weight * rec_loss
+        else:
+            total_loss = 0
+
 
         ############################
         # (2) Update D network: maximize D(x) + D(G(z))
@@ -154,8 +165,10 @@ def train(opt, netG):
         # (3) Update G network: maximize D(G(z))
         ###########################
         errG_total = 0
-        rec_loss = opt.rec_loss(generated, real)
-        errG_total += opt.rec_weight * rec_loss
+        if opt.scale_idx > 0:
+            generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+            rec_loss = opt.rec_loss(generated, real)
+            errG_total += opt.rec_weight * rec_loss
 
         # Train with 3D Discriminator
         output = D_curr(pad_with_cls(fake, idx, opt))
@@ -194,8 +207,13 @@ def train(opt, netG):
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
-                opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
+                if opt.scale_idx == 0:
+                    random_indices = torch.randint(real_zero_patches.shape[0], (3,))
+                    opt.summary.visualize_image(opt, iteration, real_zero_patches[random_indices], 'Real Patches')
+                    opt.summary.visualize_image(opt, iteration, generated_patches[random_indices], 'Generated Patches')
+                else:
+                    opt.summary.visualize_image(opt, iteration, generated, 'Generated')
 
     epoch_iterator.close()
 
@@ -204,13 +222,11 @@ def train(opt, netG):
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
         'state_dict': netG.state_dict(),
-        'optimizer': optimizerG.state_dict(),
         'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
-        'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
-        'optimizer': optimizerD.state_dict(),
+        'state_dict': D_curr.module.state_dict() if torch.cuda.device_count() > 1 else D_curr.state_dict(),
     }, 'netD_{}.pth'.format(opt.scale_idx))
 
 
@@ -375,7 +391,7 @@ if __name__ == '__main__':
         opt.resumed_idx = -1
 
     while opt.scale_idx < opt.stop_scale + 1:
-        if opt.resumed_idx != opt.scale_idx:
+        if opt.scale_idx > 0 and opt.resumed_idx != opt.scale_idx:
             netG.init_next_stage()
         train(opt, netG)
 
