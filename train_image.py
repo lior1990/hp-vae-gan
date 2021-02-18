@@ -92,6 +92,7 @@ def train(opt, netG):
         idx = idx.to(opt.device)
         idx = idx.unsqueeze(dim=1)
         real = real.to(opt.device)
+        real_zero = real_zero.to(opt.device)
 
         # todo: handle random maps
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
@@ -137,45 +138,44 @@ def train(opt, netG):
             total_loss = 0
 
 
-        ############################
-        # (2) Update D network: maximize D(x) + D(G(z))
-        ###########################
-        # train with real
-        #################
+            ############################
+            # (2) Update D network: maximize D(x) + D(G(z))
+            ###########################
+            # train with real
+            #################
 
-        # Train 3D Discriminator
-        D_curr.zero_grad()
-        output = D_curr(pad_with_cls(real, idx, opt))
-        errD_real = -output.mean()
+            # Train 3D Discriminator
+            D_curr.zero_grad()
+            output = D_curr(pad_with_cls(real, idx, opt))
+            errD_real = -output.mean()
 
-        # train with fake
-        #################
-        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            # train with fake
+            #################
+            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
 
-        # Train 3D Discriminator
-        output = D_curr(pad_with_cls(fake.detach(), idx, opt))
-        errD_fake = output.mean()
+            # Train 3D Discriminator
+            output = D_curr(pad_with_cls(fake.detach(), idx, opt))
+            errD_fake = output.mean()
 
-        gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt, idx)
-        errD_total = errD_real + errD_fake + gradient_penalty
-        errD_total.backward()
-        optimizerD.step()
+            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt, idx)
+            errD_total = errD_real + errD_fake + gradient_penalty
+            errD_total.backward()
+            optimizerD.step()
 
-        ############################
-        # (3) Update G network: maximize D(G(z))
-        ###########################
-        errG_total = 0
-        if opt.scale_idx > 0:
+            ############################
+            # (3) Update G network: maximize D(G(z))
+            ###########################
+            errG_total = 0
             generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
             rec_loss = opt.rec_loss(generated, real)
             errG_total += opt.rec_weight * rec_loss
 
-        # Train with 3D Discriminator
-        output = D_curr(pad_with_cls(fake, idx, opt))
-        errG = -output.mean() * opt.disc_loss_weight
-        errG_total += errG
+            # Train with 3D Discriminator
+            output = D_curr(pad_with_cls(fake, idx, opt))
+            errG = -output.mean() * opt.disc_loss_weight
+            errG_total += errG
 
-        total_loss += errG_total
+            total_loss += errG_total
 
         G_curr.zero_grad()
         total_loss.backward()
@@ -191,11 +191,15 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
-            opt.summary.add_scalar('Video/Scale {}/Rec'.format(opt.scale_idx), rec_loss.item(), iteration)
+
+            if opt.scale_idx > 0:
+                opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
+            else:
+                opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(),
+                                       iteration)
+                opt.summary.add_scalar('Video/Scale {}/Rec'.format(opt.scale_idx), rec_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
