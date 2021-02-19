@@ -63,7 +63,7 @@ class ConvBlock2D(nn.Sequential):
 
 
 class ConvBlock2DSN(nn.Sequential):
-    def __init__(self, in_channel, out_channel, ker_size, padding, stride, bn=True, act='lrelu'):
+    def __init__(self, in_channel, out_channel, ker_size, padding, stride, bn=True, act='lrelu', pooling=False):
         super(ConvBlock2DSN, self).__init__()
         if bn:
             self.add_module('conv', nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
@@ -75,11 +75,14 @@ class ConvBlock2DSN(nn.Sequential):
         if act is not None:
             self.add_module(act, get_activation(act))
 
+        if pooling:
+            self.add_module("avg_pool", nn.AvgPool2d(2))
+
 
 class FeatureExtractor(nn.Sequential):
-    def __init__(self, in_channel, out_channel, ker_size, padding, stride, num_blocks=2, return_linear=False):
+    def __init__(self, in_channel, out_channel, ker_size, padding, stride, num_blocks=2, return_linear=False, pooling=False):
         super(FeatureExtractor, self).__init__()
-        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride)),
+        self.add_module('conv_block_0', ConvBlock2DSN(in_channel, out_channel, ker_size, padding, stride, pooling=pooling)),
         for i in range(num_blocks - 1):
             self.add_module('conv_block_{}'.format(i + 1),
                             ConvBlock2DSN(out_channel, out_channel, ker_size, padding, stride))
@@ -115,7 +118,7 @@ class Encode2DVQVAE(nn.Module):
     def __init__(self, opt, out_dim: int, num_blocks=2):
         super(Encode2DVQVAE, self).__init__()
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks, pooling=True)
         self.conv = ConvBlock2D(opt.nfc, out_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
     def forward(self, x):
@@ -218,6 +221,18 @@ class WDiscriminator2D(nn.Module):
         return out
 
 
+class Conv2DUpsample(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=2, padding=1, **kwargs):
+        super(Conv2DUpsample, self).__init__()
+        self.conv = ConvBlock2D(in_channels, out_channels, kernel_size, padding, stride)
+        self.up = nn.Upsample(**kwargs)
+
+    def forward(self, x):
+        x = self.up(x)
+        x = self.conv(x)
+        return x
+
+
 class GeneratorHPVAEGAN(nn.Module):
     def __init__(self, opt):
         super(GeneratorHPVAEGAN, self).__init__()
@@ -232,7 +247,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        self.decoder.add_module('head', Conv2DUpsample(opt.embedding_dim, N, opt.ker_size, 1, opt.padd_size, scale_factor=2))
         for i in range(opt.num_layer):
             block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)

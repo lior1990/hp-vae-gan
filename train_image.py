@@ -125,7 +125,7 @@ def train(opt, netG):
         ###########################
 
         if opt.scale_idx == 0:
-            receptive_field = 11
+            receptive_field = 10
             unfold = torch.nn.Unfold(receptive_field, padding=opt.padd_size)
             real_zero_patches = unfold(real_zero).view(-1, opt.nc_im, receptive_field, receptive_field)
 
