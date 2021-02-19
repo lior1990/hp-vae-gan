@@ -61,6 +61,9 @@ def get_scales_by_index(index, scale_factor, stop_scale, img_size):
     scale = math.pow(scale_factor, stop_scale - index)
     s_size = math.ceil(scale * img_size)
 
+    if s_size % 2 != 0:
+        s_size += 1
+
     return s_size
 
 
