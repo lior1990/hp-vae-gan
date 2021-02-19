@@ -397,6 +397,7 @@ if __name__ == '__main__':
     while opt.scale_idx < opt.stop_scale + 1:
         if opt.scale_idx > 0 and opt.resumed_idx != opt.scale_idx:
             netG.init_next_stage()
+        netG.to(opt.device)
         train(opt, netG)
 
         # Increase scale

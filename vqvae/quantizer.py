@@ -74,3 +74,18 @@ class VectorQuantizer(nn.Module):
         z_q = z_q.permute(0, 3, 1, 2).contiguous()
 
         return loss, z_q, perplexity, min_encodings, min_encoding_indices
+
+    def embed_code(self, spatial_indices):
+        """
+        :param spatial_indices: [B, H, W] discrete values
+        :return:
+        """
+        encoding_indices = spatial_indices.flatten().unsqueeze(1)
+        min_encodings = torch.zeros(encoding_indices.shape[0], self.n_e).to(device)
+        min_encodings.scatter_(1, encoding_indices, 1)
+
+        # get quantized latent vectors
+        z_q = torch.matmul(min_encodings, self.embedding.weight)
+        z_q = z_q.reshape(spatial_indices.shape[0], self.e_dim, spatial_indices.shape[-2], spatial_indices.shape[-1])
+
+        return z_q
