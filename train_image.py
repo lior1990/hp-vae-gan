@@ -1,3 +1,5 @@
+import itertools
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -40,6 +42,9 @@ def train(opt, netG):
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
+
+    ref_optimizer = optim.Adam(itertools.chain(netG.vqvae_encode.parameters(), netG.vector_quantization.parameters()),
+                               lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     parameter_list = []
     # Generator Adversary
@@ -111,6 +116,7 @@ def train(opt, netG):
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
     iterator = iter(data_loader)
+    ref_iterator = iter(ref_data_loader)
 
     for iteration in epoch_iterator:
         try:
@@ -241,6 +247,39 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
+        if opt.ref_stop_scale < opt.scale_idx:
+            try:
+                ref_data = next(ref_iterator)
+            except StopIteration:
+                ref_iterator = iter(ref_data_loader)
+                ref_data = next(ref_iterator)
+
+            del real
+            del real_zero
+
+            if opt.scale_idx > 0:
+                ref_real, ref_real_zero = ref_data
+                ref_real_zero = ref_real_zero.to(opt.device)
+            else:
+                ref_real_zero = ref_data.to(opt.device)
+                ref_real = ref_real_zero
+
+            ref_reconstruction, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
+            ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real) + ref_embedding_loss
+            G_curr.zero_grad()
+            ref_reconstruction_loss.backward()
+            ref_optimizer.step()
+
+            if opt.visualize:
+                # Tensorboard
+                opt.summary.add_scalar('Video/Scale {}/Ref Rec loss'.format(opt.scale_idx), ref_reconstruction_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/Ref Embedding loss'.format(opt.scale_idx), ref_embedding_loss.item(),
+                                       iteration)
+
+                if iteration % opt.print_interval == 0:
+                    opt.summary.visualize_image(opt, iteration, ref_real, 'Ref Real')
+                    opt.summary.visualize_image(opt, iteration, ref_reconstruction, 'Ref Generated')
+
     epoch_iterator.close()
 
     # Save data
@@ -303,10 +342,12 @@ if __name__ == '__main__':
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
+    parser.add_argument('--ref-image-path', required=True, help="image path")
     parser.add_argument('--hflip', action='store_true', default=False, help='horizontal flip')
     parser.add_argument('--img-size', type=int, default=256)
     parser.add_argument('--stop-scale-time', type=int, default=-1)
     parser.add_argument('--data-rep', type=int, default=1000, help='data repetition')
+    parser.add_argument('--ref-stop-scale', default=1, type=int, help="ref training stop scale")
 
     # main arguments
     parser.add_argument('--checkname', type=str, default='DEBUG', help='check name')
@@ -367,7 +408,7 @@ if __name__ == '__main__':
 
     # Date
     if os.path.isdir(opt.image_path):
-        dataset = MultipleImageDataset(opt)
+        dataset = MultipleImageDataset(opt.image_path, opt)
     elif os.path.isfile(opt.image_path):
         dataset = SingleImageDataset(opt)
     else:
@@ -378,6 +419,13 @@ if __name__ == '__main__':
                              drop_last=True,
                              batch_size=opt.batch_size,
                              num_workers=0)
+
+    ref_dataset = MultipleImageDataset(opt.ref_image_path, opt)
+    ref_data_loader = DataLoader(ref_dataset,
+                                 shuffle=True,
+                                 drop_last=True,
+                                 batch_size=opt.batch_size,
+                                 num_workers=0)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale
