@@ -40,6 +40,8 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
     def _generate_image(self, image_full_scale, scale_idx):
         base_size = utils.get_scales_by_index(scale_idx, self.opt.scale_factor, self.opt.stop_scale, self.opt.img_size)
         scaled_size = [int(base_size * self.opt.ar), base_size]
+        if scale_idx == 0:
+            scaled_size[0] -= scaled_size[0] % 4
         self.opt.scaled_size = scaled_size
         img = cv2.resize(image_full_scale, tuple(scaled_size[::-1]))
         return img
