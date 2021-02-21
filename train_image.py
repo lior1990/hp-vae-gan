@@ -260,6 +260,7 @@ def train(opt, netG):
             if opt.scale_idx > 0:
                 ref_real, ref_real_zero = ref_data
                 ref_real_zero = ref_real_zero.to(opt.device)
+                ref_real = ref_real.to(opt.device)
             else:
                 ref_real_zero = ref_data.to(opt.device)
                 ref_real = ref_real_zero
