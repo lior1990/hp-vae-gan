@@ -97,7 +97,8 @@ def train(opt, netG):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    data_parallel = torch.cuda.device_count() > 1
+    if opt.device == 'cuda' and data_parallel:
         G_curr = torch.nn.DataParallel(netG)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
@@ -247,7 +248,7 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
-        if opt.ref_stop_scale < opt.scale_idx:
+        if opt.ref_stop_scale > opt.scale_idx:
             try:
                 ref_data = next(ref_iterator)
             except StopIteration:
@@ -266,9 +267,19 @@ def train(opt, netG):
                 ref_real = ref_real_zero
 
             ref_reconstruction, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
-            ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real) + ref_embedding_loss
+
+            ref_total_loss = ref_embedding_loss
+
+            if opt.vae_levels >= opt.scale_idx + 1:
+                ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
+            else:
+                ref_output = D_curr(ref_reconstruction)
+                ref_reconstruction_loss = -ref_output.mean() * opt.disc_loss_weight
+
+            ref_total_loss += ref_reconstruction_loss
+
             G_curr.zero_grad()
-            ref_reconstruction_loss.backward()
+            ref_total_loss.backward()
             ref_optimizer.step()
 
             if opt.visualize:
@@ -294,7 +305,7 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
-            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
+            'state_dict': D_curr.module.state_dict() if data_parallel else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
@@ -471,6 +482,7 @@ if __name__ == '__main__':
     while opt.scale_idx < opt.stop_scale + 1:
         if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
             netG.init_next_stage()
+        netG.to(opt.device)
         train(opt, netG)
 
         # Increase scale
