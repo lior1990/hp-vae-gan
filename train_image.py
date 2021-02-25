@@ -33,9 +33,10 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
-        if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
+        if (opt.netG != '') and opt.resumed_idx != -1:
             D_curr.load_state_dict(
                 torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+            opt.resumed_idx = -1
         elif opt.vae_levels < opt.scale_idx:
             D_curr.load_state_dict(
                 torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
@@ -270,13 +271,13 @@ def train(opt, netG):
 
             ref_total_loss = ref_embedding_loss
 
-            if opt.vae_levels >= opt.scale_idx + 1:
-                ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
-            else:
-                ref_output = D_curr(ref_reconstruction)
-                ref_reconstruction_loss = -ref_output.mean() * opt.disc_loss_weight
-
+            ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
             ref_total_loss += ref_reconstruction_loss
+
+            if opt.vae_levels < opt.scale_idx + 1:
+                ref_d_output = D_curr(ref_reconstruction)
+                ref_d_loss = -ref_d_output.mean() * opt.disc_loss_weight
+                ref_total_loss += ref_d_loss
 
             G_curr.zero_grad()
             ref_total_loss.backward()
@@ -287,6 +288,9 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/Ref Rec loss'.format(opt.scale_idx), ref_reconstruction_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/Ref Embedding loss'.format(opt.scale_idx), ref_embedding_loss.item(),
                                        iteration)
+                if opt.vae_levels < opt.scale_idx + 1:
+                    opt.summary.add_scalar('Video/Scale {}/Ref D loss'.format(opt.scale_idx), ref_d_loss.item(),
+                                           iteration)
 
                 if iteration % opt.print_interval == 0:
                     opt.summary.visualize_image(opt, iteration, ref_real, 'Ref Real')
@@ -474,13 +478,14 @@ if __name__ == '__main__':
         for _ in range(opt.scale_idx):
             netG.init_next_stage()
         netG.load_state_dict(checkpoint['state_dict'])
+        opt.scale_idx += 1
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
     else:
         opt.resumed_idx = -1
 
     while opt.scale_idx < opt.stop_scale + 1:
-        if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
+        if opt.scale_idx > 0:
             netG.init_next_stage()
         netG.to(opt.device)
         train(opt, netG)
