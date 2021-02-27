@@ -33,13 +33,14 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
-        if (opt.netG != '') and opt.resumed_idx != -1:
-            D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
-            opt.resumed_idx = -1
-        elif opt.vae_levels < opt.scale_idx:
-            D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
+        if opt.vae_levels < opt.scale_idx:
+            if (opt.netG != '') and opt.resumed_idx != -1:
+                D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+                opt.resumed_idx = -1
+            else:
+                D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
