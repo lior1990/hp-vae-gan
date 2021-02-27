@@ -44,9 +44,10 @@ def train(opt, netG):
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
-
-    ref_optimizer = optim.Adam(itertools.chain(netG.vqvae_encode.parameters(), netG.vector_quantization.parameters()),
-                               lr=opt.lr_g, betas=(opt.beta1, 0.999))
+        ref_optimizer_g = optim.Adam(netG.body[-1].parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
+    else:
+        ref_optimizer_encoder = optim.Adam(itertools.chain(netG.vqvae_encode.parameters(), netG.vector_quantization.parameters()),
+                                   lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     parameter_list = []
     # Generator Adversary
@@ -270,27 +271,37 @@ def train(opt, netG):
 
             ref_reconstruction, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
 
-            ref_total_loss = ref_embedding_loss
-
-            ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
-            ref_total_loss += ref_reconstruction_loss
-
             if opt.vae_levels < opt.scale_idx + 1:
+                # todo: make G get gradients from D's output only (not from reconstruction)
+                # todo: make external decoder that tries to reconstruct using G's encoder
+                # todo: add loss (perception?) that tries to minimize the distance between
+                #  the reconstruction of the ref image (w/ the external decoder) and G's output
                 ref_d_output = D_curr(ref_reconstruction)
                 ref_d_loss = -ref_d_output.mean() * opt.disc_loss_weight
-                ref_total_loss += ref_d_loss
 
-            G_curr.zero_grad()
-            ref_total_loss.backward()
-            ref_optimizer.step()
+                G_curr.zero_grad()
+                ref_d_loss.backward()
+                ref_optimizer_g.step()
+            else:
+                ref_total_loss = ref_embedding_loss
+
+                ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
+                ref_total_loss += ref_reconstruction_loss
+
+                G_curr.zero_grad()
+                ref_total_loss.backward()
+                ref_optimizer_encoder.step()
 
             if opt.visualize:
                 # Tensorboard
-                opt.summary.add_scalar('Video/Scale {}/Ref Rec loss'.format(opt.scale_idx), ref_reconstruction_loss.item(), iteration)
-                opt.summary.add_scalar('Video/Scale {}/Ref Embedding loss'.format(opt.scale_idx), ref_embedding_loss.item(),
-                                       iteration)
                 if opt.vae_levels < opt.scale_idx + 1:
                     opt.summary.add_scalar('Video/Scale {}/Ref D loss'.format(opt.scale_idx), ref_d_loss.item(),
+                                           iteration)
+                else:
+                    opt.summary.add_scalar('Video/Scale {}/Ref Rec loss'.format(opt.scale_idx),
+                                           ref_reconstruction_loss.item(), iteration)
+                    opt.summary.add_scalar('Video/Scale {}/Ref Embedding loss'.format(opt.scale_idx),
+                                           ref_embedding_loss.item(),
                                            iteration)
 
                 if iteration % opt.print_interval == 0:
