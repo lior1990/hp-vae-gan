@@ -55,8 +55,8 @@ class ImageSaver(object):
         clip_name = '.'.join(opt.image_path.split('/')[-1].split('.')[:-1])
         self.directory = os.path.join('run', clip_name, opt.checkname)
         if run_id is None:
-            self.runs = sorted(glob.glob(os.path.join(self.directory, 'experiment_*')))
-            run_id = int(self.runs[-1].split('_')[-1]) + 1 if self.runs else 0
+            runs_ids = sorted(list(map(lambda s: int(s.split("_")[-1]), glob.glob(os.path.join(self.directory, 'experiment_*')))))
+            run_id = (runs_ids[-1] + 1) if runs_ids else 0
 
         self.experiment_dir = os.path.join(self.directory, 'experiment_{}'.format(str(run_id)))
         if not os.path.exists(self.experiment_dir):
