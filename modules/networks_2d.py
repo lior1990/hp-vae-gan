@@ -279,7 +279,7 @@ class GeneratorHPVAEGAN(nn.Module):
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
-            if mode == 'rand':
+            if mode in ['rand', 'noise_rand']:
                 noise = utils.generate_noise(ref=x_prev_out_up)
                 x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
             else:

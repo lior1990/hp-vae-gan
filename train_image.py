@@ -270,13 +270,17 @@ def train(opt, netG):
                 ref_real_zero = ref_data.to(opt.device)
                 ref_real = ref_real_zero
 
-            ref_reconstruction, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
-
             if opt.vae_levels < opt.scale_idx + 1:
                 # todo: make G get gradients from D's output only (not from reconstruction)
                 # todo: make external decoder that tries to reconstruct using G's encoder
                 # todo: add loss (perception?) that tries to minimize the distance between
                 #  the reconstruction of the ref image (w/ the external decoder) and G's output
+                # todo: split latent space to content and style.
+                #  then use additional decoder for reference images that shares the same latent space for the content
+                # todo: add cycle loss - create additional decoder D' s.t.
+                #  E(D'(E(ref-image))) = E(D(E(ref-image)))
+                ref_reconstruction, _ = G_curr(ref_real_zero, opt.Noise_Amps, mode="noise_rand")
+
                 ref_d_output = D_curr(ref_reconstruction)
                 ref_d_loss = -ref_d_output.mean() * opt.disc_loss_weight
 
@@ -284,6 +288,8 @@ def train(opt, netG):
                 ref_d_loss.backward()
                 ref_optimizer_g.step()
             else:
+                ref_reconstruction, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
+
                 ref_total_loss = ref_embedding_loss
 
                 ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
