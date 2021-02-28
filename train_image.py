@@ -29,6 +29,14 @@ green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
+def get_g_parameters_list(netG, opt):
+    train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
+    return [
+        {"params": block.parameters(),
+         "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
+        for idx, block in enumerate(netG.body[-train_depth:])]
+
+
 def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
@@ -44,7 +52,7 @@ def train(opt, netG):
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
-        ref_optimizer_g = optim.Adam(netG.body[-1].parameters(), lr=opt.lr_g, betas=(opt.beta1, 0.999))
+        ref_optimizer_g = optim.Adam(get_g_parameters_list(netG, opt), lr=opt.lr_g, betas=(opt.beta1, 0.999))
     else:
         ref_optimizer_encoder = optim.Adam(itertools.chain(netG.vqvae_encode.parameters(), netG.vector_quantization.parameters()),
                                    lr=opt.lr_g, betas=(opt.beta1, 0.999))
@@ -54,21 +62,14 @@ def train(opt, netG):
 
     if not opt.train_all:
         if opt.vae_levels < opt.scale_idx + 1:
-            train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
-            parameter_list += [
-                {"params": block.parameters(),
-                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
-                for idx, block in enumerate(netG.body[-train_depth:])]
+            parameter_list += get_g_parameters_list(netG, opt)
         else:
             # VQVAE
             parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.vector_quantization.parameters(),
                                 "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
-            parameter_list += [
-                {"params": block.parameters(),
-                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
-                for idx, block in enumerate(netG.body[-opt.train_depth:])]
+            parameter_list += get_g_parameters_list(netG, opt)
     else:
         if len(netG.body) < opt.train_depth:
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
