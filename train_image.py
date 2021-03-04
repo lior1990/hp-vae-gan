@@ -178,7 +178,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -233,7 +233,7 @@ def train(opt, netG):
                     fake_var = []
                     for _ in range(3):
                         noise_init = utils.generate_noise(ref=noise_init)
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="rand")
+                        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 

@@ -264,16 +264,18 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, img, noise_amp, noise_init=None, mode='rand'):
+    def forward(self, img, noise_amp, noise_init=None, mode='rand', verbose=False):
         z_e = self.vqvae_encode(img)
         embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
+        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode, verbose)
 
         return x_prev_out, embedding_loss
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, verbose=False):
+        results = [x_prev_out]
+
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
@@ -286,8 +288,9 @@ class GeneratorHPVAEGAN(nn.Module):
                 x_prev = block(x_prev_out_up)
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+            results.append(x_prev_out)
 
-        return x_prev_out
+        return results if verbose else results[-1]
 
 
 class GeneratorVAE_nb(nn.Module):
