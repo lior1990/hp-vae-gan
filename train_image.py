@@ -270,7 +270,7 @@ def train(opt, netG):
                 ref_real_zero = ref_data.to(opt.device)
                 ref_real = ref_real_zero
 
-            if opt.vae_levels < opt.scale_idx + 1:
+            if opt.scale_idx > 0:
                 # todo: make G get gradients from D's output only (not from reconstruction)
                 # todo: make external decoder that tries to reconstruct using G's encoder
                 # todo: add loss (perception?) that tries to minimize the distance between
@@ -279,7 +279,7 @@ def train(opt, netG):
                 #  then use additional decoder for reference images that shares the same latent space for the content
                 # todo: add cycle loss - create additional decoder D' s.t.
                 #  E(D'(E(ref-image))) = E(D(E(ref-image)))
-                ref_reconstruction, _ = G_curr(ref_real_zero, opt.Noise_Amps, mode="noise_rand")
+                ref_reconstruction, _ = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
 
                 ref_d_output = D_curr(ref_reconstruction)
                 ref_d_loss = -ref_d_output.mean() * opt.disc_loss_weight
@@ -288,9 +288,14 @@ def train(opt, netG):
                 ref_d_loss.backward()
                 ref_optimizer_g.step()
             else:
-                ref_reconstruction, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
+                ref_z_e = G_curr.vqvae_encode(ref_real_zero)
+                ref_embedding_loss, z_q, _, _, _ = G_curr.vector_quantization(ref_z_e, "rec")
 
-                ref_total_loss = ref_embedding_loss
+                ref_reconstruction = G_curr.decoder(z_q)
+
+                cycle_loss = opt.rec_loss_l1(G_curr.vqvae_encode(ref_reconstruction), ref_z_e)
+
+                ref_total_loss = ref_embedding_loss + cycle_loss
 
                 ref_reconstruction_loss = opt.rec_loss(ref_reconstruction, ref_real)
                 ref_total_loss += ref_reconstruction_loss
@@ -301,10 +306,12 @@ def train(opt, netG):
 
             if opt.visualize:
                 # Tensorboard
-                if opt.vae_levels < opt.scale_idx + 1:
+                if opt.scale_idx > 0:
                     opt.summary.add_scalar('Video/Scale {}/Ref D loss'.format(opt.scale_idx), ref_d_loss.item(),
                                            iteration)
                 else:
+                    opt.summary.add_scalar('Video/Scale {}/Ref Cycle loss'.format(opt.scale_idx),
+                                           cycle_loss.item(), iteration)
                     opt.summary.add_scalar('Video/Scale {}/Ref Rec loss'.format(opt.scale_idx),
                                            ref_reconstruction_loss.item(), iteration)
                     opt.summary.add_scalar('Video/Scale {}/Ref Embedding loss'.format(opt.scale_idx),
@@ -435,6 +442,7 @@ if __name__ == '__main__':
 
     # Reconstruction loss
     opt.rec_loss = torch.nn.MSELoss()
+    opt.rec_loss_l1 = torch.nn.L1Loss()
 
     # Initial parameters
     opt.scale_idx = 0

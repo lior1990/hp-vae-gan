@@ -228,6 +228,21 @@ class UpsampleConvBlock2D(nn.Sequential):
         self.add_module("conv", ConvBlock2D(in_channel, out_channel, ker_size, padding, stride,bn=bn, act=act))
 
 
+class Decoder(nn.Module):
+    def __init__(self, opt):
+        super(Decoder, self).__init__()
+        self.decoder = nn.Sequential()
+        N = int(opt.nfc)
+        self.decoder.add_module('head', ConvBlock2D(opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        for i in range(opt.enc_blocks-1):
+            block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+            self.decoder.add_module('block%d' % (i), block)
+        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
+
+    def forward(self, z):
+        return self.decoder(z)
+
+
 class GeneratorHPVAEGAN(nn.Module):
     def __init__(self, opt):
         super(GeneratorHPVAEGAN, self).__init__()
@@ -238,14 +253,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
         self.vector_quantization = VectorQuantizer(opt.n_embeddings, opt.embedding_dim, opt.vqvae_beta)
-        self.decoder = nn.Sequential()
-
-        # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
-        for i in range(opt.enc_blocks-1):
-            block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
-            self.decoder.add_module('block%d' % (i), block)
-        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
+        self.decoder = Decoder(opt)
 
         self.body = torch.nn.ModuleList([])
 
