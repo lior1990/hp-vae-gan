@@ -31,12 +31,14 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
-        if (opt.netG != '') and (opt.resumed_idx == opt.scale_idx):
-            D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
-        elif opt.vae_levels < opt.scale_idx:
-            D_curr.load_state_dict(
-                torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
+        if opt.vae_levels < opt.scale_idx:
+            if (opt.netG != '') and opt.resumed_idx != -1:
+                D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+                opt.resumed_idx = -1
+            else:
+                D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
@@ -414,14 +416,16 @@ if __name__ == '__main__':
         for _ in range(opt.scale_idx):
             netG.init_next_stage()
         netG.load_state_dict(checkpoint['state_dict'])
+        opt.scale_idx += 1
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
     else:
         opt.resumed_idx = -1
 
     while opt.scale_idx < opt.stop_scale + 1:
-        if (opt.scale_idx > 0) and (opt.resumed_idx != opt.scale_idx):
+        if opt.scale_idx > 0:
             netG.init_next_stage()
+        netG.to(opt.device)
         train(opt, netG)
 
         # Increase scale
