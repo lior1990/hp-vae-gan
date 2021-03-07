@@ -236,12 +236,13 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
+        vqvae_embedding_dim = opt.embedding_dim + 2  # 2 for positional encoding
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = VectorQuantizer(opt.n_embeddings, opt.embedding_dim, opt.vqvae_beta)
+        self.vector_quantization = VectorQuantizer(opt.n_embeddings, vqvae_embedding_dim, opt.vqvae_beta)
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.enc_blocks-1):
             block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
@@ -266,6 +267,8 @@ class GeneratorHPVAEGAN(nn.Module):
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand'):
         z_e = self.vqvae_encode(img)
+        positional_encoding = utils.convert_to_coord_format(z_e.shape[0], z_e.shape[-2], z_e.shape[-1], device=self.opt.device)
+        z_e = torch.cat([z_e, positional_encoding.repeat(1, self.opt.positional_encoding_weight, 1, 1)], dim=1)
         embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
