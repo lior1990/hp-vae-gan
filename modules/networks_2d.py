@@ -266,15 +266,19 @@ class GeneratorHPVAEGAN(nn.Module):
             self.body.append(copy.deepcopy(self.body[-1]))
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand'):
-        z_e = self.vqvae_encode(img)
-        positional_encoding = utils.convert_to_coord_format(z_e.shape[0], z_e.shape[-2], z_e.shape[-1], device=self.opt.device)
-        z_e = torch.cat([z_e, positional_encoding.repeat(1, self.opt.positional_encoding_weight, 1, 1)], dim=1)
+        z_e = self.encode(img)
         embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
         x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
         return x_prev_out, embedding_loss
+
+    def encode(self, img):
+        z_e = self.vqvae_encode(img)
+        positional_encoding = utils.convert_to_coord_format(z_e.shape[0], z_e.shape[-2], z_e.shape[-1], device=self.opt.device)
+        z_e = torch.cat([z_e, positional_encoding.repeat(1, self.opt.positional_encoding_weight, 1, 1)], dim=1)
+        return z_e
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):

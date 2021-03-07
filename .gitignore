@@ -128,3 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 /run/
+
+/data/
+/notebooks/
+/pixelcnn/results/
+/pixelcnn/generated_dataset/
