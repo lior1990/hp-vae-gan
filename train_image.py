@@ -35,7 +35,6 @@ def train(opt, netG):
             if (opt.netG != '') and opt.resumed_idx != -1:
                 D_curr.load_state_dict(
                     torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
-                opt.resumed_idx = -1
             else:
                 D_curr.load_state_dict(
                     torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
@@ -431,3 +430,5 @@ if __name__ == '__main__':
 
         # Increase scale
         opt.scale_idx += 1
+        if opt.resumed_idx != -1:
+            opt.resumed_idx = -1
