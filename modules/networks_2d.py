@@ -306,7 +306,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
             z_e = self.encode(encoder, img)
             embedding_loss, z_q, _, _, _ = vector_quantization(z_e, mode)
-            vqvae_out = torch.tanh(decoder(torch.cat([z_q, vqvae_out_up], dim=1)))
+            vqvae_out = torch.tanh(decoder(torch.cat([z_q, vqvae_out_up], dim=1)) + vqvae_out_up)
 
             embedding_losses.append(embedding_loss)
             start_idx += 1
