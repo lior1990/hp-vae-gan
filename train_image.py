@@ -286,6 +286,7 @@ if __name__ == '__main__':
     parser.add_argument('--noise_amp', type=float, default=0.1, help='addative noise cont weight')
     parser.add_argument('--min-size', type=int, default=32, help='image minimal size at the coarser scale')
     parser.add_argument('--max-size', type=int, default=256, help='image minimal size at the coarser scale')
+    parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
 
     # optimization hyper parameters:
     parser.add_argument('--niter', type=int, default=50000, help='number of iterations to train per scale')

@@ -118,7 +118,7 @@ class Encode2DVQVAE(nn.Module):
     def __init__(self, opt, out_dim: int, num_blocks=2):
         super(Encode2DVQVAE, self).__init__()
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks, pooling=True)
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks, pooling=opt.pooling)
         self.conv = ConvBlock2D(opt.nfc, out_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
     def forward(self, x):
@@ -244,7 +244,10 @@ class GeneratorHPVAEGAN(nn.Module):
         # Normal Decoder
         self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.enc_blocks-1):
-            block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+            if opt.pooling:
+                block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+            else:
+                block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
         self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
