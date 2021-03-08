@@ -228,21 +228,14 @@ class UpsampleConvBlock2D(nn.Sequential):
         self.add_module("conv", ConvBlock2D(in_channel, out_channel, ker_size, padding, stride,bn=bn, act=act))
 
 
-class GeneratorHPVAEGAN(nn.Module):
-    def __init__(self, opt):
-        super(GeneratorHPVAEGAN, self).__init__()
-
-        self.opt = opt
-        N = int(opt.nfc)
-        self.N = N
-
-        vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
-        self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = VectorQuantizer(opt.n_embeddings, vqvae_embedding_dim, opt.vqvae_beta)
+class Decoder(nn.Module):
+    def __init__(self, opt, input_dim):
+        super(Decoder, self).__init__()
         self.decoder = nn.Sequential()
 
-        # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        N = int(opt.nfc)
+
+        self.decoder.add_module('head', ConvBlock2D(input_dim, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.enc_blocks-1):
             if opt.pooling:
                 block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
@@ -251,7 +244,37 @@ class GeneratorHPVAEGAN(nn.Module):
             self.decoder.add_module('block%d' % (i), block)
         self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2))
 
+    def forward(self, z):
+        return self.decoder(z)
+
+
+class GeneratorHPVAEGAN(nn.Module):
+    def __init__(self, opt):
+        super(GeneratorHPVAEGAN, self).__init__()
+
+        self.opt = opt
+        N = int(opt.nfc)
+        self.N = N
+
+        self.vqvae_encoders = torch.nn.ModuleList([])
+        self.vector_quantizations = torch.nn.ModuleList([])
+        self.decoders = torch.nn.ModuleList([])
+
+        self.init_vqvae_layer()
+
         self.body = torch.nn.ModuleList([])
+
+    def init_vqvae_layer(self):
+        vqvae_embedding_dim = self.opt.embedding_dim + 2*self.opt.positional_encoding_weight  # 2 for positional encoding
+        self.vqvae_encoders.append(Encode2DVQVAE(self.opt, out_dim=self.opt.embedding_dim, num_blocks=self.opt.enc_blocks))
+        self.vector_quantizations.append(VectorQuantizer(self.opt.n_embeddings, vqvae_embedding_dim, self.opt.vqvae_beta))
+
+        decoder_input_dim = vqvae_embedding_dim
+
+        if len(self.decoders) > 0:
+            decoder_input_dim += self.opt.nc_im  # residual decoder
+
+        self.decoders.append(Decoder(self.opt, decoder_input_dim))
 
     def init_next_stage(self):
         if len(self.body) == 0:
@@ -268,25 +291,40 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, img, noise_amp, noise_init=None, mode='rand'):
-        z_e = self.encode(img)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
-        vqvae_out = torch.tanh(self.decoder(z_q))
+    def forward(self, imgs, noise_amp, noise_init=None, mode='rand', verbose=False):
+        encoder, vector_quantization, decoder = self.vqvae_encoders[0], self.vector_quantizations[0], self.decoders[0]
+        z_e = self.encode(encoder, imgs[0])
+        embedding_loss, z_q, _, _, _ = vector_quantization(z_e, mode)
+        vqvae_out = torch.tanh(decoder(z_q))
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
+        embedding_losses = [embedding_loss]
 
-        return x_prev_out, embedding_loss
+        start_idx = 1
+        for idx, (encoder, vector_quantization, decoder) in enumerate(zip(self.vqvae_encoders[start_idx:], self.vector_quantizations[start_idx:], self.decoders[start_idx:]), start=start_idx):
+            img = imgs[idx]
+            vqvae_out_up = utils.upscale_2d(vqvae_out, idx, self.opt)
 
-    def encode(self, img):
-        z_e = self.vqvae_encode(img)
+            z_e = self.encode(encoder, img)
+            embedding_loss, z_q, _, _, _ = vector_quantization(z_e, mode)
+            vqvae_out = torch.tanh(decoder(torch.cat([z_q, vqvae_out_up], dim=1)))
+
+            embedding_losses.append(embedding_loss)
+            start_idx += 1
+
+        x_prev_out = self.refinement_layers(start_idx, vqvae_out, noise_amp, mode)
+
+        return x_prev_out, embedding_losses
+
+    def encode(self, encoder, img):
+        z_e = encoder(img)
         positional_encoding = utils.convert_to_coord_format(z_e.shape[0], z_e.shape[-2], z_e.shape[-1], device=self.opt.device)
         z_e = torch.cat([z_e, positional_encoding.repeat(1, self.opt.positional_encoding_weight, 1, 1)], dim=1)
         return z_e
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
-        for idx, block in enumerate(self.body[start_idx:], start_idx):
+        for idx, block in enumerate(self.body, start_idx):
             # Upscale
-            x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+            x_prev_out_up = utils.upscale_2d(x_prev_out, idx, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':

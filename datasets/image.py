@@ -54,13 +54,12 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
 
         images_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
 
-        # Extract o-level index
-        if self.opt.scale_idx > 0:
-            images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
+        input_imgs = []
+        for scale_idx in range(min(self.opt.scale_idx+1, self.opt.vqvae_levels)):
+            input_imgs.append(self._transform_image(image_full_scale, scale_idx, hflip))
 
-            return [images_transformed, images_zero_scale_transformed]
-
-        return images_transformed
+        # todo: there is an overlap here in the first scales... need to handle it
+        return images_transformed, input_imgs
 
     @abstractmethod
     def _get_image(self, idx):

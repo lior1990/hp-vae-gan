@@ -28,10 +28,10 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
 def train(opt, netG):
-    if opt.vae_levels < opt.scale_idx + 1:
+    if opt.vqvae_levels < opt.scale_idx + 1:
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
-        if opt.vae_levels < opt.scale_idx:
+        if opt.vqvae_levels < opt.scale_idx:
             if (opt.netG != '') and opt.resumed_idx != -1:
                 D_curr.load_state_dict(
                     torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
@@ -46,22 +46,26 @@ def train(opt, netG):
     # Generator Adversary
 
     if not opt.train_all:
-        if opt.vae_levels < opt.scale_idx + 1:
-            train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
+        if opt.vqvae_levels < opt.scale_idx + 1:
+            train_depth = min(opt.train_depth, (len(netG.body)+len(netG.decoders)) - opt.vqvae_levels + 1)
             parameter_list += [
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-train_depth:])]
         else:
             # VQVAE
-            parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.vector_quantization.parameters(),
-                                "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
             parameter_list += [
                 {"params": block.parameters(),
-                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
-                for idx, block in enumerate(netG.body[-opt.train_depth:])]
+                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.vqvae_encoders[-opt.train_depth:]) - 1 - idx))}
+                for idx, block in enumerate(netG.vqvae_encoders[-opt.train_depth:])]
+            parameter_list += [
+                {"params": block.parameters(),
+                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.vector_quantizations[-opt.train_depth:]) - 1 - idx))}
+                for idx, block in enumerate(netG.vector_quantizations[-opt.train_depth:])]
+            parameter_list += [
+                {"params": block.parameters(),
+                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.decoders[-opt.train_depth:]) - 1 - idx))}
+                for idx, block in enumerate(netG.decoders[-opt.train_depth:])]
     else:
         if len(netG.body) < opt.train_depth:
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -76,26 +80,12 @@ def train(opt, netG):
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-opt.train_depth:])]
 
-    # if opt.vae_levels < opt.scale_idx + 1:
-    #     train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
-    #     parameter_list += [
-    #         {"params": block.parameters(), "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
-    #         for idx, block in enumerate(netG.body[-train_depth:])]
-    # else:
-    #     # VAE
-    #     parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-    #                        {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
-    #     parameter_list += [
-    #         {"params": block.parameters(),
-    #          "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
-    #         for idx, block in enumerate(netG.body[-opt.train_depth:])]
-
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
     if opt.device == 'cuda':
         G_curr = torch.nn.DataParallel(netG)
-        if opt.vae_levels < opt.scale_idx + 1:
+        if opt.vqvae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
     else:
         G_curr = netG
@@ -120,13 +110,9 @@ def train(opt, netG):
             iterator = iter(opt.data_loader)
             data = next(iterator)
 
-        if opt.scale_idx > 0:
-            real, real_zero = data
-            real = real.to(opt.device)
-            real_zero = real_zero.to(opt.device)
-        else:
-            real = data.to(opt.device)
-            real_zero = real
+        real, input_imgs = data
+        real = real.to(opt.device)
+        input_imgs = [input_img.to(opt.device) for input_img in input_imgs]
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
         initial_size = [int(initial_size * opt.ar), initial_size]
@@ -147,7 +133,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction, _ = G_curr(input_imgs, opt.Noise_Amps, mode="rec")
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -158,11 +144,11 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, embedding_losses = G_curr(input_imgs, opt.Noise_Amps, mode="rec")
 
-        if opt.vae_levels >= opt.scale_idx + 1:
+        if opt.vqvae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
-            vqvae_loss = opt.rec_weight * rec_vae_loss + embedding_loss
+            vqvae_loss = opt.rec_weight * rec_vae_loss + sum(embedding_losses)
 
             total_loss += vqvae_loss
         else:
@@ -179,7 +165,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
+            fake, _ = G_curr(input_imgs, opt.Noise_Amps, mode="vq_rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -218,11 +204,12 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
-                opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
+            if opt.vqvae_levels >= opt.scale_idx + 1:
+                for idx, embedding_loss in enumerate(embedding_losses):
+                    opt.summary.add_scalar('Video/Scale {}/embedding loss {}'.format(opt.scale_idx, idx), embedding_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
-            if opt.vae_levels < opt.scale_idx + 1:
+            if opt.vqvae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
@@ -233,8 +220,7 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        noise_init = utils.generate_noise(ref=noise_init)
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
+                        fake, _ = G_curr(input_imgs, opt.Noise_Amps, mode="vq_rand")
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
@@ -252,7 +238,7 @@ def train(opt, netG):
         'optimizer': optimizerG.state_dict(),
         'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
-    if opt.vae_levels < opt.scale_idx + 1:
+    if opt.vqvae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
             'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
@@ -272,7 +258,7 @@ if __name__ == '__main__':
     parser.add_argument('--nc-im', type=int, default=3, help='# channels')
     parser.add_argument('--nfc', type=int, default=64, help='model basic # channels')
     parser.add_argument('--latent-dim', type=int, default=128, help='Latent dim size')
-    parser.add_argument('--vae-levels', type=int, default=3, help='# VAE levels')
+    parser.add_argument('--vqvae-levels', type=int, default=3, help='# VQVAE levels')
     parser.add_argument('--enc-blocks', type=int, default=2, help='# encoder blocks')
     parser.add_argument('--ker-size', type=int, default=3, help='kernel size')
     parser.add_argument('--num-layer', type=int, default=5, help='number of layers')
@@ -327,7 +313,7 @@ if __name__ == '__main__':
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
 
-    assert opt.vae_levels > 0
+    assert opt.vqvae_levels > 0
     assert opt.disc_loss_weight > 0
 
     if opt.data_rep < opt.batch_size:
@@ -414,8 +400,11 @@ if __name__ == '__main__':
         opt.scale_idx = checkpoint['scale']
         opt.resumed_idx = checkpoint['scale']
         opt.resume_dir = os.sep.join(opt.netG.split(os.sep)[:-1])
-        for _ in range(opt.scale_idx):
-            netG.init_next_stage()
+        for current_scale in range(opt.scale_idx):
+            if opt.vqvae_levels < current_scale + 1:
+                netG.init_vqvae_layer()
+            else:
+                netG.init_next_stage()
         netG.load_state_dict(checkpoint['state_dict'])
         opt.scale_idx += 1
         # NoiseAmp
@@ -425,7 +414,11 @@ if __name__ == '__main__':
 
     while opt.scale_idx < opt.stop_scale + 1:
         if opt.scale_idx > 0:
-            netG.init_next_stage()
+            if opt.vqvae_levels < opt.scale_idx + 1:
+                netG.init_next_stage()
+            else:
+                netG.init_vqvae_layer()
+
         netG.to(opt.device)
         train(opt, netG)
 
