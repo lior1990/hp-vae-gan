@@ -401,10 +401,10 @@ if __name__ == '__main__':
         opt.resumed_idx = checkpoint['scale']
         opt.resume_dir = os.sep.join(opt.netG.split(os.sep)[:-1])
         for current_scale in range(opt.scale_idx):
-            if opt.vqvae_levels < current_scale + 1:
-                netG.init_vqvae_layer()
-            else:
+            if opt.vqvae_levels <= current_scale + 1:
                 netG.init_next_stage()
+            else:
+                netG.init_vqvae_layer()
         netG.load_state_dict(checkpoint['state_dict'])
         opt.scale_idx += 1
         # NoiseAmp
