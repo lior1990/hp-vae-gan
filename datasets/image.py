@@ -22,6 +22,7 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         self.to_pil = transforms.ToPILImage()
         self.normalize = transforms.Normalize((0.5,), (0.5,))
         self.to_tensor = transforms.ToTensor()
+        self.hflip = transforms.RandomHorizontalFlip()
 
     def _transform_image(self, image, scale_index: int, hflip: bool):
         images_zero_scale = self._generate_image(image, scale_index)
@@ -33,7 +34,10 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
     def _get_transformed_images(self, images, hflip):
         images_transformed = self.to_pil(images)
 
-        if self.opt.vqvae_levels >= self.opt.scale_idx + 1:
+        if hflip:
+            images_transformed = self.hflip(images_transformed)
+
+        if self.opt.hflip and (self.opt.vqvae_levels >= self.opt.scale_idx + 1):
             if random.random() > 0.5:
                 images_transformed = self.color_jitter(images_transformed)
             images_transformed = self.random_grayscale(images_transformed)
