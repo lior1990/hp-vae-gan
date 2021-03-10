@@ -4,6 +4,8 @@ from abc import ABCMeta, abstractmethod
 from torch.utils.data import Dataset
 import imageio
 import kornia as K
+from torchvision.transforms import transforms
+
 import utils
 import cv2
 import logging
@@ -11,11 +13,15 @@ import os
 
 
 class ImageDataset(Dataset, metaclass=ABCMeta):
-    def __init__(self, opt, transforms=None):
+    def __init__(self, opt):
         self.zero_scale_frames = None
         self.frames = None
-        self.transforms = transforms
         self.opt = opt
+        self.random_grayscale = transforms.RandomGrayscale(0.2)
+        self.color_jitter = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
+        self.to_pil = transforms.ToPILImage()
+        self.normalize = transforms.Normalize((0.5,), (0.5,))
+        self.to_tensor = transforms.ToTensor()
 
     def _transform_image(self, image, scale_index: int, hflip: bool):
         images_zero_scale = self._generate_image(image, scale_index)
@@ -24,16 +30,17 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         images_zero_scale_transformed = self._get_transformed_images(images_zero_scale, hflip)
         return images_zero_scale_transformed
 
-    @staticmethod
-    def _get_transformed_images(images, hflip):
+    def _get_transformed_images(self, images, hflip):
+        images_transformed = self.to_pil(images)
 
-        images_transformed = images
-
-        if hflip:
-            images_transformed = K.hflip(images_transformed)
+        if self.opt.vae_levels >= self.opt.scale_idx + 1:
+            if random.random() > 0.5:
+                images_transformed = self.color_jitter(images_transformed)
+            images_transformed = self.random_grayscale(images_transformed)
 
         # Normalize
-        images_transformed = K.normalize(images_transformed, 0.5, 0.5)
+        images_transformed = self.to_tensor(images_transformed)
+        images_transformed = self.normalize(images_transformed)
 
         return images_transformed
 
@@ -52,15 +59,15 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         # Horizontal flip (Until Kornia will handle videos
         hflip = random.random() < 0.5 if self.opt.hflip else False
 
-        images_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
+        image_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
 
         # Extract o-level index
         if self.opt.scale_idx > 0:
             images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
 
-            return [images_transformed, images_zero_scale_transformed]
+            return [image_transformed, images_zero_scale_transformed]
 
-        return images_transformed
+        return image_transformed
 
     @abstractmethod
     def _get_image(self, idx):
@@ -72,8 +79,8 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
 
 
 class SingleImageDataset(ImageDataset):
-    def __init__(self, opt, transforms=None):
-        super(SingleImageDataset, self).__init__(opt, transforms=transforms)
+    def __init__(self, opt):
+        super(SingleImageDataset, self).__init__(opt)
 
         self.image_path = opt.image_path
         if not os.path.exists(opt.image_path):
@@ -94,8 +101,8 @@ class SingleImageDataset(ImageDataset):
 
 
 class MultipleImageDataset(ImageDataset):
-    def __init__(self, opt, transforms=None):
-        super(MultipleImageDataset, self).__init__(opt, transforms=transforms)
+    def __init__(self, opt):
+        super(MultipleImageDataset, self).__init__(opt)
 
         if not (os.path.exists(opt.image_path) and os.path.isdir(opt.image_path)):
             logging.error("invalid path")
