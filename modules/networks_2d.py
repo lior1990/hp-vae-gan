@@ -263,6 +263,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.init_vqvae_layer()
 
         self.body = torch.nn.ModuleList([])
+        self.consistency_loss = torch.nn.MSELoss()
 
     def init_vqvae_layer(self):
         vqvae_embedding_dim = self.opt.embedding_dim + 2*self.opt.positional_encoding_weight  # 2 for positional encoding
@@ -298,6 +299,7 @@ class GeneratorHPVAEGAN(nn.Module):
         vqvae_out = torch.tanh(decoder(z_q))
 
         embedding_losses = [embedding_loss]
+        consistency_losses = []
 
         start_idx = 1
         for idx, (encoder, vector_quantization, decoder) in enumerate(zip(self.vqvae_encoders[start_idx:], self.vector_quantizations[start_idx:], self.decoders[start_idx:]), start=start_idx):
@@ -305,15 +307,20 @@ class GeneratorHPVAEGAN(nn.Module):
             vqvae_out_up = utils.upscale_2d(vqvae_out, idx, self.opt)
 
             z_e = self.encode(encoder, img)
-            embedding_loss, z_q, _, _, _ = vector_quantization(z_e, mode)
-            vqvae_out = torch.tanh(decoder(torch.cat([z_q, vqvae_out_up], dim=1)) + vqvae_out_up)
+            embedding_loss, z_q, _, _, _ = vector_quantization(z_e, "rec")
+            z = torch.cat([z_q, vqvae_out_up], dim=1)
+            vqvae_out = torch.tanh(decoder(z) + vqvae_out_up)
+
+            z_e_restore = self.encode(encoder, vqvae_out)
+            consistency_loss = self.consistency_loss(z_e_restore, z_e)
+            consistency_losses.append(consistency_loss)
 
             embedding_losses.append(embedding_loss)
             start_idx += 1
 
         x_prev_out = self.refinement_layers(start_idx, vqvae_out, noise_amp, mode)
 
-        return x_prev_out, embedding_losses
+        return x_prev_out, embedding_losses, consistency_losses
 
     def encode(self, encoder, img):
         z_e = encoder(img)

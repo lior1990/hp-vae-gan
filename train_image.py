@@ -133,7 +133,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _ = G_curr(input_imgs, opt.Noise_Amps, mode="rec")
+                        z_reconstruction = G_curr(input_imgs, opt.Noise_Amps, mode="rec")[0]
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -144,11 +144,11 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_losses = G_curr(input_imgs, opt.Noise_Amps, mode="rec")
+        generated, embedding_losses, consistency_losses = G_curr(input_imgs, opt.Noise_Amps, mode="rec")
 
         if opt.vqvae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
-            vqvae_loss = opt.rec_weight * rec_vae_loss + sum(embedding_losses)
+            vqvae_loss = opt.rec_weight * rec_vae_loss + sum(embedding_losses) + sum(consistency_losses)
 
             total_loss += vqvae_loss
         else:
@@ -165,7 +165,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(input_imgs, opt.Noise_Amps, mode="vq_rand")
+            fake = G_curr(input_imgs, opt.Noise_Amps, mode="vq_rand")[0]
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -207,6 +207,8 @@ def train(opt, netG):
             if opt.vqvae_levels >= opt.scale_idx + 1:
                 for idx, embedding_loss in enumerate(embedding_losses):
                     opt.summary.add_scalar('Video/Scale {}/embedding loss {}'.format(opt.scale_idx, idx), embedding_loss.item(), iteration)
+                for idx, consistency_loss in enumerate(consistency_losses):
+                    opt.summary.add_scalar('Video/Scale {}/consistency loss {}'.format(opt.scale_idx, idx), consistency_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
             if opt.vqvae_levels < opt.scale_idx + 1:
@@ -220,7 +222,7 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        fake, _ = G_curr(input_imgs, opt.Noise_Amps, mode="vq_rand")
+                        fake = G_curr(input_imgs, opt.Noise_Amps, mode="vq_rand")[0]
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
