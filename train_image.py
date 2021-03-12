@@ -394,7 +394,7 @@ def train_pixel_cnn_model(opt, netG):
     data_loader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0)
 
     pixel_cnn_model = GatedPixelCNN(opt.n_embeddings, opt.nfc, opt.num_layer * 3).to(opt.device)
-    pixel_cnn.to(opt.device)
+    pixel_cnn_model.to(opt.device)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(pixel_cnn_model.parameters(), lr=opt.lr_g)
 
