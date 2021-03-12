@@ -29,7 +29,8 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         images_zero_scale = K.image_to_tensor(images_zero_scale)
         images_zero_scale = images_zero_scale / 255
         images_zero_scale_transformed = self._get_transformed_images(images_zero_scale, hflip)
-        return images_zero_scale_transformed
+        images_zero_scale = self.normalize(images_zero_scale)
+        return images_zero_scale, images_zero_scale_transformed
 
     def _get_transformed_images(self, images, hflip):
         images_transformed = self.to_pil(images)
@@ -37,7 +38,7 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         if hflip:
             images_transformed = self.hflip(images_transformed)
 
-        if self.opt.hflip and (self.opt.vae_levels >= self.opt.scale_idx + 1):
+        if self.opt.vae_levels >= self.opt.scale_idx + 1:
             if random.random() > 0.5:
                 images_transformed = self.color_jitter(images_transformed)
             images_transformed = self.random_grayscale(images_transformed)
@@ -63,15 +64,15 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         # Horizontal flip (Until Kornia will handle videos
         hflip = random.random() < 0.5 if self.opt.hflip else False
 
-        image_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
+        image, image_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
 
         # Extract o-level index
         if self.opt.scale_idx > 0:
-            images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
+            images_zero_scale, images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
 
-            return [image_transformed, images_zero_scale_transformed]
+            return [(image, image_transformed), (images_zero_scale, images_zero_scale_transformed)]
 
-        return image_transformed
+        return image, image_transformed
 
     @abstractmethod
     def _get_image(self, idx):

@@ -121,12 +121,19 @@ def train(opt, netG):
             data = next(iterator)
 
         if opt.scale_idx > 0:
-            real, real_zero = data
+            real_tup, real_zero_tup = data
+            real, real_transformed = real_tup
+            real_zero, real_zero_transformed = real_zero_tup
             real = real.to(opt.device)
+            real_transformed = real_transformed.to(opt.device)
             real_zero = real_zero.to(opt.device)
+            real_zero_transformed = real_zero_transformed.to(opt.device)
         else:
-            real = data.to(opt.device)
-            real_zero = real
+            real_tup = data
+            real, real_transformed = real_tup
+            real = real.to(opt.device)
+            real_transformed = real_transformed.to(opt.device)
+            real_zero, real_zero_transformed = real, real_transformed
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
         initial_size = [int(initial_size * opt.ar), initial_size]
@@ -158,7 +165,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, embedding_loss = G_curr(real_zero_transformed, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -239,6 +246,7 @@ def train(opt, netG):
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
+                opt.summary.visualize_image(opt, iteration, real_transformed, 'Real Transformed')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
