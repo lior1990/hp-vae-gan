@@ -394,7 +394,6 @@ def train_pixel_cnn_model(opt, netG):
     data_loader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0)
 
     pixel_cnn_model = GatedPixelCNN(opt.n_embeddings, opt.nfc, opt.num_layer * 3).to(opt.device)
-    pixel_cnn_model.to(opt.device)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(pixel_cnn_model.parameters(), lr=opt.lr_g)
 
@@ -413,8 +412,7 @@ def create_pixel_cnn_samples_data_loader(pixel_cnn_model, opt, h, w, samples_to_
         for idx in range(int(samples_to_generate/batch_size)):
             print(f"Generating {batch_size} samples iter number {idx}...")
             start_time = time.time()
-            samples_batch = pixel_cnn_model.generate(shape=(max(h,w), max(h,w)),
-                                                     batch_size=samples_to_generate)
+            samples_batch = pixel_cnn_model.generate(shape=(h, w), batch_size=samples_to_generate)
             if h != w:
                 # the model supports only NxN input, need to fix that
                 samples_batch = samples_batch[:, :h, :w]

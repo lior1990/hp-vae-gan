@@ -148,14 +148,19 @@ class GatedPixelCNN(nn.Module):
 
     def generate(self, shape=(8, 8), batch_size=3):
         param = next(self.parameters())
+        dim = max(shape[0], shape[1])
+        square_shape = (dim, dim)
         x = torch.zeros(
-            (batch_size, *shape),
+            (batch_size, *square_shape),
             dtype=torch.int64, device=param.device
         )
 
-        for i in range(shape[0]):
-            for j in range(shape[1]):
-                # todo: verify the output dimension
+        h, w = shape
+
+        for i in range(square_shape[0]):
+            for j in range(square_shape[1]):
+                if i > h or j > w:
+                    continue
                 logits = self.forward(x)
                 probs = F.softmax(logits[:, :, i, j], -1)
                 x.data[:, i, j].copy_(
