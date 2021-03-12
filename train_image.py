@@ -394,6 +394,7 @@ def train_pixel_cnn_model(opt, netG):
     data_loader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0)
 
     pixel_cnn_model = GatedPixelCNN(opt.n_embeddings, opt.nfc, opt.num_layer * 3).to(opt.device)
+    pixel_cnn.to(opt.device)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(pixel_cnn_model.parameters(), lr=opt.lr_g)
 
@@ -579,6 +580,8 @@ if __name__ == '__main__':
     assert hasattr(networks_2d, opt.generator)
     netG = getattr(networks_2d, opt.generator)(opt).to(opt.device)
 
+    pixel_cnn_samples_data_loader = None
+
     if opt.netG != '':
         if not os.path.isfile(opt.netG):
             raise RuntimeError("=> no <G> checkpoint found at '{}'".format(opt.netG))
@@ -592,10 +595,13 @@ if __name__ == '__main__':
         opt.scale_idx += 1
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
+
+        samples = torch.load(os.path.join(opt.resume_dir, 'pixelcnn-samples.pth'))
+        pixel_cnn_samples_data_loader = DataLoader(PixelCNNSamplesDataset(samples), num_workers=0,
+                                                   batch_size=opt.batch_size)
     else:
         opt.resumed_idx = -1
 
-    pixel_cnn_samples_data_loader = None
 
     while opt.scale_idx < opt.stop_scale + 1:
         if opt.scale_idx > 0:
@@ -609,6 +615,8 @@ if __name__ == '__main__':
             pixel_cnn_samples_data_loader = DataLoader(PixelCNNSamplesDataset(samples), num_workers=0, batch_size=opt.batch_size)
             opt.saver.save_checkpoint({
                 'samples': samples,
+            }, 'pixelcnn-samples.pth')
+            opt.saver.save_checkpoint({
                 'state_dict': pixel_cnn.state_dict(),
             }, 'pixelcnn.pth')
             del pixel_cnn
