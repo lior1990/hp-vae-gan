@@ -104,7 +104,7 @@ class ConditionedGatedMaskedConv2d(GatedMaskedConv2d):
 
 
 class GatedPixelCNN(nn.Module):
-    def __init__(self, input_dim, dim, n_layers=15):
+    def __init__(self, input_dim, dim, n_layers=15, dropout=0.5):
         super().__init__()
         self.dim = dim
 
@@ -113,6 +113,8 @@ class GatedPixelCNN(nn.Module):
 
         # Building the PixelCNN layer by layer
         self.layers = nn.ModuleList()
+
+        self.dropout = nn.Dropout2d(dropout)
 
         # Initial block with Mask-A convolution
         # Rest with Mask-B convolutions
@@ -143,6 +145,8 @@ class GatedPixelCNN(nn.Module):
         x_v, x_h = (class_map, class_map)
         for i, layer in enumerate(self.layers):
             x_v, x_h = layer(x_v, x_h)
+
+        x_h = self.dropout(x_h)
 
         return self.output_conv(x_h)
 
