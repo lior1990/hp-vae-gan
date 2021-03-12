@@ -22,21 +22,19 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         self.to_pil = transforms.ToPILImage()
         self.normalize = transforms.Normalize((0.5,), (0.5,))
         self.to_tensor = transforms.ToTensor()
-        self.hflip = transforms.RandomHorizontalFlip()
 
     def _transform_image(self, image, scale_index: int, hflip: bool):
         images_zero_scale = self._generate_image(image, scale_index)
         images_zero_scale = K.image_to_tensor(images_zero_scale)
         images_zero_scale = images_zero_scale / 255
-        images_zero_scale_transformed = self._get_transformed_images(images_zero_scale, hflip)
+        if hflip:
+            images_zero_scale = K.hflip(images_zero_scale)
+        images_zero_scale_transformed = self._get_transformed_images(images_zero_scale)
         images_zero_scale = self.normalize(images_zero_scale)
         return images_zero_scale, images_zero_scale_transformed
 
-    def _get_transformed_images(self, images, hflip):
+    def _get_transformed_images(self, images):
         images_transformed = self.to_pil(images)
-
-        if hflip:
-            images_transformed = self.hflip(images_transformed)
 
         if self.opt.vae_levels >= self.opt.scale_idx + 1:
             if random.random() > 0.5:
