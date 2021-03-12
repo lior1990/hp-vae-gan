@@ -283,7 +283,7 @@ def train_with_pixel_cnn(opt, netG, pixel_cnn_samples_data_loader):
             try:
                 samples = next(samples_iterator)
             except StopIteration:
-                iterator = iter(pixel_cnn_samples_data_loader)
+                samples_iterator = iter(pixel_cnn_samples_data_loader)
                 samples = next(samples_iterator)
 
             samples = samples.squeeze(dim=1)
