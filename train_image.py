@@ -590,7 +590,7 @@ if __name__ == '__main__':
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
 
-        samples = torch.load(os.path.join(opt.resume_dir, 'pixelcnn-samples.pth'))
+        samples = torch.load(os.path.join(opt.resume_dir, 'pixelcnn-samples.pth'))["samples"]
         pixel_cnn_samples_data_loader = DataLoader(PixelCNNSamplesDataset(samples), num_workers=0,
                                                    batch_size=opt.batch_size)
     else:
