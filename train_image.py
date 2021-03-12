@@ -393,7 +393,7 @@ def train_pixel_cnn_model(opt, netG):
     encodings = generate(opt, netG, ref_data_loader)
     print(f"Going to train PixelCNN model over {len(encodings)} with {opt.niter} repetitions")
     dataset = PixelCNNDataset(encodings=encodings, data_repetition=opt.niter)
-    data_loader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0)
+    data_loader = DataLoader(dataset, batch_size=opt.batch_size*5, shuffle=False, num_workers=0)
 
     pixel_cnn_model = GatedPixelCNN(opt.n_embeddings, opt.nfc, opt.num_layer * 3).to(opt.device)
     criterion = torch.nn.CrossEntropyLoss()
