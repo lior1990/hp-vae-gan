@@ -27,6 +27,7 @@ blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
 green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
+
 def train_zero_scale_with_ref(opt, netG):
     # VQVAE
     parameter_list = [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -390,6 +391,7 @@ def train_pixel_cnn_model(opt, netG):
                                  batch_size=opt.batch_size * 5,
                                  num_workers=0)
     encodings = generate(opt, netG, ref_data_loader)
+    print(f"Going to train PixelCNN model over {len(encodings)} with {opt.niter} repetitions")
     dataset = PixelCNNDataset(encodings=encodings, data_repetition=opt.niter)
     data_loader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0)
 
@@ -405,22 +407,16 @@ def train_pixel_cnn_model(opt, netG):
 def create_pixel_cnn_samples_data_loader(pixel_cnn_model, opt, h, w, samples_to_generate=100):
     pixel_cnn_model.eval()
 
-    samples = []
-
     with torch.no_grad():
-        batch_size = opt.batch_size * 5
-        for idx in range(int(samples_to_generate/batch_size)):
-            print(f"Generating {batch_size} samples iter number {idx}...")
-            start_time = time.time()
-            samples_batch = pixel_cnn_model.generate(shape=(h, w), batch_size=samples_to_generate)
-            if h != w:
-                # the model supports only NxN input, need to fix that
-                samples_batch = samples_batch[:, :h, :w]
-            samples_list = torch.split(samples_batch, 1)
-            print(f"Done generating samples in {time.time() - start_time} seconds for iter number {idx}")
-            samples.extend(samples_list)
+        print(f"Generating {samples_to_generate} samples...")
+        start_time = time.time()
+        samples_batch = pixel_cnn_model.generate(shape=(h, w), batch_size=samples_to_generate)
+        if h != w:
+            # the model supports only NxN input, need to fix that
+            samples_batch = samples_batch[:, :h, :w]
+        print(f"Done generating samples in {time.time() - start_time} seconds")
 
-    return samples
+    return samples_batch
 
 
 if __name__ == '__main__':

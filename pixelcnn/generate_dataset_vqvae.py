@@ -30,7 +30,7 @@ def generate(opt, netG, data_loader):
     results = []
 
     for batch_idx, real_zero in enumerate(iter(data_loader)):
-        print(f"Working on batch: {batch_idx}")
+        print(f"Creating encodings for batch: {batch_idx} of size {real_zero.shape[0]}")
         real_zero = real_zero.to(opt.device)
 
         with torch.no_grad():
