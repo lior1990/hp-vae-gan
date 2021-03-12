@@ -94,16 +94,20 @@ class SingleImageDataset(ImageDataset):
 
 
 class MultipleImageDataset(ImageDataset):
-    def __init__(self, opt, transforms=None):
+    def __init__(self, opt, transforms=None, load_ref_image=False, data_rep=None):
         super(MultipleImageDataset, self).__init__(opt, transforms=transforms)
 
-        if not (os.path.exists(opt.image_path) and os.path.isdir(opt.image_path)):
+        self.data_rep = opt.data_rep if data_rep is None else data_rep
+
+        image_path = opt.ref_image_path if load_ref_image else opt.image_path
+
+        if not (os.path.exists(image_path) and os.path.isdir(image_path)):
             logging.error("invalid path")
             exit(0)
 
         self.images = []
-        for img_path in os.listdir(opt.image_path):
-            image_full_scale = imageio.imread(os.path.join(opt.image_path, img_path))[:, :, :3]
+        for img_path in os.listdir(image_path):
+            image_full_scale = imageio.imread(os.path.join(image_path, img_path))[:, :, :3]
             self.images.append(image_full_scale)
 
         self.num_of_images = len(self.images)
@@ -116,7 +120,18 @@ class MultipleImageDataset(ImageDataset):
         opt.ar = h / w  # H2W
 
     def __len__(self):
-        return self.opt.data_rep * self.num_of_images
+        return self.data_rep * self.num_of_images
 
     def _get_image(self, idx):
         return self.images[idx % self.num_of_images]
+
+
+class PixelCNNSamplesDataset(Dataset):
+    def __init__(self, samples_list):
+        self.samples_list = samples_list
+
+    def __getitem__(self, idx):
+        return self.samples_list[idx]
+
+    def __len__(self):
+        return len(self.samples_list)

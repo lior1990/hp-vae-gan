@@ -25,16 +25,16 @@ green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
-def generate(opt, netG):
+def generate(opt, netG, data_loader):
 
     results = []
 
-    for batch_idx, (_, real_zero) in enumerate(iter(opt.data_loader)):
+    for batch_idx, real_zero in enumerate(iter(data_loader)):
         print(f"Working on batch: {batch_idx}")
         real_zero = real_zero.to(opt.device)
 
         with torch.no_grad():
-            z_e = netG.vqvae_encode(real_zero)
+            z_e = netG.encode(real_zero)
             _, _, _, _, min_encoding_indices = netG.vector_quantization(z_e, "rec")
             min_encoding_indices = min_encoding_indices.view(z_e.shape[0], z_e.shape[-2], z_e.shape[-1])
             results.extend(map(lambda t: t.squeeze(dim=0), torch.chunk(min_encoding_indices, min_encoding_indices.shape[0])))
@@ -193,7 +193,7 @@ def load_generator(opt):
 def main():
     opt = parse_arguments()
     netG = load_generator(opt)
-    encodings = generate(opt, netG)
+    encodings = generate(opt, netG, opt.data_loader)
     save_dataset(opt, encodings)
 
 

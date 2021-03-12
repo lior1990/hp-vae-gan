@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import math
 
 __all__ = ['interpolate', 'interpolate_3D', 'adjust_scales2image', 'generate_noise', 'get_scales_by_index',
-           'get_fps_td_by_index', 'get_fps_by_index', 'upscale', 'upscale_2d']
+           'get_fps_td_by_index', 'get_fps_by_index', 'upscale', 'upscale_2d', 'convert_to_coord_format']
 
 
 def interpolate(input, size=None, scale_factor=None, interpolation='bilinear'):
@@ -105,3 +105,10 @@ def upscale_2d(image, index, opt):
     img_up = interpolate(image, size=next_shape)
 
     return img_up
+
+
+def convert_to_coord_format(b, h, w, device='cpu'):
+    x_channel = torch.linspace(-1, 1, w, device=device).view(1, 1, 1, -1).repeat(b, 1, h, 1)
+    y_channel = torch.linspace(-1, 1, h, device=device).view(1, 1, -1, 1).repeat(b, 1, 1, w)
+
+    return torch.cat((x_channel, y_channel), dim=1)

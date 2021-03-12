@@ -236,12 +236,13 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
+        vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = VectorQuantizer(opt.n_embeddings, opt.embedding_dim, opt.vqvae_beta)
+        self.vector_quantization = VectorQuantizer(opt.n_embeddings, vqvae_embedding_dim, opt.vqvae_beta)
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
+        self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1))
         for i in range(opt.enc_blocks-1):
             block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
             self.decoder.add_module('block%d' % (i), block)
@@ -264,18 +265,28 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             self.body.append(copy.deepcopy(self.body[-1]))
 
-    def forward(self, img, noise_amp, noise_init=None, mode='rand', verbose=False):
-        z_e = self.vqvae_encode(img)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
+    def forward(self, img, noise_amp, noise_init=None, mode='rand', samples=None):
+        if samples is None:
+            z_e = self.encode(img)
+            embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
+        else:
+            embedding_loss = None
+            samples = samples.view(-1, 1)
+            _, z_q = self.vector_quantization.get_quantized_embeddings(samples)
+            z_q = z_q.view(img.shape[0], z_q.shape[-1], img.shape[-2], img.shape[-1])
         vqvae_out = torch.tanh(self.decoder(z_q))
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode, verbose)
+        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
         return x_prev_out, embedding_loss
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, verbose=False):
-        results = [x_prev_out]
+    def encode(self, img):
+        z_e = self.vqvae_encode(img)
+        positional_encoding = utils.convert_to_coord_format(z_e.shape[0], z_e.shape[-2], z_e.shape[-1], device=self.opt.device)
+        z_e = torch.cat([z_e, positional_encoding.repeat(1, self.opt.positional_encoding_weight, 1, 1)], dim=1)
+        return z_e
 
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
@@ -288,9 +299,8 @@ class GeneratorHPVAEGAN(nn.Module):
                 x_prev = block(x_prev_out_up)
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
-            results.append(x_prev_out)
 
-        return results if verbose else results[-1]
+        return x_prev_out
 
 
 class GeneratorVAE_nb(nn.Module):
