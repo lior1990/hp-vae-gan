@@ -1,3 +1,5 @@
+import itertools
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -41,7 +43,9 @@ def train(opt, netG):
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
-
+    else:
+        ref_optimizer_encoder = optim.Adam(itertools.chain(netG.vqvae_encode.parameters(), netG.vector_quantization.parameters()),
+                                   lr=opt.lr_g, betas=(opt.beta1, 0.999))
     parameter_list = []
     # Generator Adversary
 
@@ -93,7 +97,8 @@ def train(opt, netG):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    data_parallel = torch.cuda.device_count() > 1
+    if opt.device == 'cuda' and data_parallel:
         G_curr = torch.nn.DataParallel(netG)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
@@ -112,6 +117,7 @@ def train(opt, netG):
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
     iterator = iter(data_loader)
+    ref_iterator = iter(ref_data_loader)
 
     for iteration in epoch_iterator:
         try:
@@ -216,6 +222,34 @@ def train(opt, netG):
         torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
         optimizerG.step()
 
+        if opt.vae_levels >= opt.scale_idx + 1:
+            try:
+                ref_data = next(ref_iterator)
+            except StopIteration:
+                ref_iterator = iter(ref_data_loader)
+                ref_data = next(ref_iterator)
+
+            if opt.scale_idx > 0:
+                ref_real_tup, ref_real_zero_tup = ref_data
+                ref_real, _ = ref_real_tup
+                ref_real_zero, _ = ref_real_zero_tup
+                ref_real = ref_real.to(opt.device)
+                ref_real_zero = ref_real_zero.to(opt.device)
+            else:
+                ref_real_tup = ref_data
+                ref_real, _ = ref_real_tup
+                ref_real = ref_real.to(opt.device)
+                ref_real_zero = ref_real
+
+            ref_generated, ref_embedding_loss = G_curr(ref_real_zero, opt.Noise_Amps, mode="rec")
+
+            ref_reconstruction_loss = opt.rec_loss(ref_generated, ref_real)
+            ref_total_loss = ref_embedding_loss + ref_reconstruction_loss
+
+            G_curr.zero_grad()
+            ref_total_loss.backward()
+            ref_optimizer_encoder.step()
+
         # Update progress bar
         epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}]'.format(
             opt.scale_idx + 1, opt.stop_scale + 1,
@@ -227,6 +261,10 @@ def train(opt, netG):
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.vae_levels >= opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/ref embedding loss'.format(opt.scale_idx), ref_reconstruction_loss.item(),
+                                       iteration)
+                opt.summary.add_scalar('Video/Scale {}/ref rec loss'.format(opt.scale_idx), ref_embedding_loss.item(),
+                                       iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
             if opt.vae_levels < opt.scale_idx + 1:
@@ -250,6 +288,9 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
+                if opt.vae_levels >= opt.scale_idx + 1:
+                    opt.summary.visualize_image(opt, iteration, torch.cat([ref_real, ref_generated]), 'Ref')
+
     epoch_iterator.close()
 
     # Save data
@@ -263,7 +304,7 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
-            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
+            'state_dict': D_curr.module.state_dict() if data_parallel else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
@@ -313,6 +354,7 @@ if __name__ == '__main__':
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
+    parser.add_argument('--ref-image-path', required=True, help="image path")
     parser.add_argument('--hflip', action='store_true', default=False, help='horizontal flip')
     parser.add_argument('--img-size', type=int, default=256)
     parser.add_argument('--stop-scale-time', type=int, default=-1)
@@ -389,6 +431,13 @@ if __name__ == '__main__':
                              drop_last=True,
                              batch_size=opt.batch_size,
                              num_workers=0)
+
+    ref_dataset = MultipleImageDataset(opt, load_ref_image=True)
+    ref_data_loader = DataLoader(ref_dataset,
+                                 shuffle=True,
+                                 drop_last=True,
+                                 batch_size=opt.batch_size,
+                                 num_workers=0)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale
