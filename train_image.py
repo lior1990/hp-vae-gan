@@ -54,15 +54,14 @@ def train(opt, netG):
                 for idx, block in enumerate(netG.body[-train_depth:])]
         else:
             # VQVAE
-            if opt.scale_idx == 0:
-                parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                                   {"params": netG.vector_quantization.parameters(),
-                                    "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                                   {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+            parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.vector_quantization.parameters(),
+                                "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
             parameter_list += [
                 {"params": block.parameters(),
-                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-opt.train_depth:]) - 1 - idx))}
-                for idx, block in enumerate(netG.body[-opt.train_depth:])]
+                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body) - 1 - idx))}
+                for idx, block in enumerate(netG.body)]
     else:
         if len(netG.body) < opt.train_depth:
             parameter_list += [{"params": netG.encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
