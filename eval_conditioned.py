@@ -76,9 +76,7 @@ def parse_opt():
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
 
     parser.set_defaults(hflip=False)
-    opt = parser.parse_args(
-        "--image-path data/imgs/2imgs --checkname ae-conditional-w-classifier-disc4th --visualize --no-cuda --n_embeddings 60 --embedding_dim 5 --vae-levels 3 --enc-blocks 1 --nfc 128 --positional_encoding_weight 1 --min-size 32".split(
-            " "))
+    opt = parser.parse_args()
     return opt
 
 keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size", "num_layer"]
@@ -163,6 +161,7 @@ def init(opt):
     netG.load_state_dict(checkpoint["state_dict"])
     # NoiseAmp
     opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
+    netG.to(opt.device)
     return netG
 
 
@@ -181,7 +180,7 @@ def eval_netG(image_path, save_dir, opt, netG):
 
         def plot_tensor(t, ax):
             norm(t)
-            ax.imshow(t.squeeze().permute((1, 2, 0)))
+            ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
 
         for idx, (img, img_zero) in enumerate(test_data_loader):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
