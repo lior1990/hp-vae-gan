@@ -14,7 +14,8 @@ def interpolate(input, size=None, scale_factor=None, interpolation='bilinear'):
         _, _, h1, w1 = scaled.shape
         scaled = scaled.reshape(b, t, c, h1, w1).permute(0, 2, 1, 3, 4)
     else:
-        scaled = F.interpolate(input, size=size, scale_factor=scale_factor, mode=interpolation, align_corners=True)
+        align_corners = True if interpolation != "nearest" else None
+        scaled = F.interpolate(input, size=size, scale_factor=scale_factor, mode=interpolation, align_corners=align_corners)
 
     return scaled
 
@@ -102,7 +103,7 @@ def upscale_2d(image, index, opt):
     next_shape = [int(next_shape * opt.ar), next_shape]
 
     # Video interpolation
-    img_up = interpolate(image, size=next_shape)
+    img_up = interpolate(image, size=next_shape, interpolation=opt.interpolation_method)
 
     return img_up
 

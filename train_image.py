@@ -295,6 +295,7 @@ if __name__ == '__main__':
     parser.add_argument('--min-size', type=int, default=32, help='image minimal size at the coarser scale')
     parser.add_argument('--max-size', type=int, default=256, help='image minimal size at the coarser scale')
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
+    parser.add_argument('--interpolation-method', type=str, default="bilinear", help="upscale interpolation method")
 
     # optimization hyper parameters:
     parser.add_argument('--niter', type=int, default=50000, help='number of iterations to train per scale')
