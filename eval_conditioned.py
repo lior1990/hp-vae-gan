@@ -190,6 +190,7 @@ def eval_netG(image_path, save_dir, opt, netG):
                 axes[plot_idx].set_xticks([])
                 axes[plot_idx].set_yticks([])
 
+            img_zero[0] = img_zero[0].to(opt.device)
             rec_output = netG(img_zero[0], opt.Noise_Amps, mode="rec")[0]
 
             plot_tensor(img[0], axes[0])
