@@ -29,6 +29,10 @@ def parse_opt():
     parser.add_argument('--num-layer', type=int, default=5, help='number of layers')
     parser.add_argument('--stride', default=1, help='stride')
     parser.add_argument('--padd-size', type=int, default=1, help='net pad size')
+    parser.add_argument('--padding-mode', type=str, default="zeros", help='net padding mode')
+    parser.add_argument('--encoder-normalization-method', type=str, default="spectral", help='encoder normalization method')
+    parser.add_argument('--decoder-normalization-method', type=str, default="bn", help='decoder normalization method')
+    parser.add_argument('--g-normalization-method', type=str, default="bn", help='generator normalization method')
     parser.add_argument('--generator', type=str, default='GeneratorHPVAEGAN', help='generator model')
     parser.add_argument('--discriminator', type=str, default='WDiscriminator2D', help='discriminator model')
 
@@ -80,7 +84,8 @@ def parse_opt():
     opt = parser.parse_args()
     return opt
 
-keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size", "num_layer"]
+keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size",
+        "num_layer", "decoder_normalization_method", "g_normalization_method", "padding_mode", "interpolation_method"]
 results = {}
 def load_params(net_g_path):
     folder = os.path.dirname(net_g_path)
@@ -91,7 +96,10 @@ def load_params(net_g_path):
             if search_key in line:
                 idx = line.index(search_key)
                 val = line.strip()[idx+len(search_key):]
-                results[key] = int(val)
+                try:
+                    results[key] = int(val)
+                except ValueError:
+                    results[key] = val
                 break
     return results
 
