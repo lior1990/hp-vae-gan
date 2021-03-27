@@ -85,7 +85,7 @@ def parse_opt():
     return opt
 
 keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size",
-        "num_layer", "decoder_normalization_method", "g_normalization_method", "padding_mode", "interpolation_method"]
+        "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method", "padding_mode", "interpolation_method"]
 results = {}
 def load_params(net_g_path):
     folder = os.path.dirname(net_g_path)
