@@ -120,20 +120,9 @@ def train(opt, netG):
             iterator = iter(opt.data_loader)
             data = next(iterator)
 
-        if opt.scale_idx > 0:
-            real_tup, real_zero_tup = data
-            real, real_transformed = real_tup
-            real_zero, real_zero_transformed = real_zero_tup
-            real = real.to(opt.device)
-            real_transformed = real_transformed.to(opt.device)
-            real_zero = real_zero.to(opt.device)
-            real_zero_transformed = real_zero_transformed.to(opt.device)
-        else:
-            real_tup = data
-            real, real_transformed = real_tup
-            real = real.to(opt.device)
-            real_transformed = real_transformed.to(opt.device)
-            real_zero, real_zero_transformed = real, real_transformed
+        real_zero, real = data
+        real = real.to(opt.device)
+        real_zero = real_zero.to(opt.device)
 
         initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
         initial_size = [int(initial_size * opt.ar), initial_size]
@@ -165,7 +154,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_loss = G_curr(real_zero_transformed, opt.Noise_Amps, mode="rec")
+        generated, embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -246,7 +235,6 @@ def train(opt, netG):
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
-                opt.summary.visualize_image(opt, iteration, real_transformed, 'Real Transformed')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
@@ -281,7 +269,7 @@ if __name__ == '__main__':
     parser.add_argument('--nfc', type=int, default=64, help='model basic # channels')
     parser.add_argument('--latent-dim', type=int, default=128, help='Latent dim size')
     parser.add_argument('--vae-levels', type=int, default=3, help='# VAE levels')
-    parser.add_argument('--enc-blocks', type=int, default=2, help='# encoder blocks')
+    parser.add_argument('--enc-blocks', type=int, default=4, help='# encoder blocks')
     parser.add_argument('--ker-size', type=int, default=3, help='kernel size')
     parser.add_argument('--num-layer', type=int, default=5, help='number of layers')
     parser.add_argument('--stride', default=1, help='stride')

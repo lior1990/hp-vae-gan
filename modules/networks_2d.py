@@ -82,7 +82,7 @@ class ConvBlock2DSN(nn.Sequential):
             self.add_module(act, get_activation(act))
 
         if pooling:
-            self.add_module("pooling", torch.nn.AvgPool2d(2))
+            self.add_module("pooling", torch.nn.MaxPool2d(2))
 
 
 class FeatureExtractor(nn.Sequential):
@@ -124,7 +124,7 @@ class Encode2DVQVAE(nn.Module):
     def __init__(self, opt, out_dim: int, num_blocks=2):
         super(Encode2DVQVAE, self).__init__()
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, opt.padding_mode, opt.encoder_normalization_method, num_blocks=num_blocks, pooling=opt.pooling)
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, opt.padding_mode, opt.encoder_normalization_method, num_blocks=num_blocks, pooling=True)
         self.conv = ConvBlock2D(opt.nfc, out_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
     def forward(self, x):

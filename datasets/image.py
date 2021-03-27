@@ -27,23 +27,19 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         images_zero_scale = self._generate_image(image, scale_index)
         images_zero_scale = K.image_to_tensor(images_zero_scale)
         images_zero_scale = images_zero_scale / 255
+        images_zero_scale_transformed = self._get_transformed_images(images_zero_scale, hflip)
+        return images_zero_scale_transformed
+
+    @staticmethod
+    def _get_transformed_images(images, hflip):
+
+        images_transformed = images
+
         if hflip:
-            images_zero_scale = K.hflip(images_zero_scale)
-        images_zero_scale_transformed = self._get_transformed_images(images_zero_scale)
-        images_zero_scale = self.normalize(images_zero_scale)
-        return images_zero_scale, images_zero_scale_transformed
-
-    def _get_transformed_images(self, images):
-        images_transformed = self.to_pil(images)
-
-        if self.opt.vae_levels >= self.opt.scale_idx + 1:
-            if random.random() > 0.5:
-                images_transformed = self.color_jitter(images_transformed)
-            images_transformed = self.random_grayscale(images_transformed)
+            images_transformed = K.hflip(images_transformed)
 
         # Normalize
-        images_transformed = self.to_tensor(images_transformed)
-        images_transformed = self.normalize(images_transformed)
+        images_transformed = K.normalize(images_transformed, 0.5, 0.5)
 
         return images_transformed
 
@@ -52,6 +48,8 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         scaled_size = [int(base_size * self.opt.ar), base_size]
         if scale_idx == 0:
             scaled_size[0] -= scaled_size[0] % 4
+        if scale_idx == self.opt.stop_scale:
+            scaled_size[0] -= 6  # todo: fix this workaround
         self.opt.scaled_size = scaled_size
         img = cv2.resize(image_full_scale, tuple(scaled_size[::-1]))
         return img
@@ -62,15 +60,10 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         # Horizontal flip (Until Kornia will handle videos
         hflip = random.random() < 0.5 if self.opt.hflip else False
 
-        image, image_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
+        images_full_scale_transformed = self._transform_image(image_full_scale, self.opt.stop_scale, hflip)
+        images_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
 
-        # Extract o-level index
-        if self.opt.scale_idx > 0:
-            images_zero_scale, images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
-
-            return [(image, image_transformed), (images_zero_scale, images_zero_scale_transformed)]
-
-        return image, image_transformed
+        return images_full_scale_transformed, images_transformed
 
     @abstractmethod
     def _get_image(self, idx):
