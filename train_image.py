@@ -403,7 +403,7 @@ if __name__ == '__main__':
 
     with logger.LoggingBlock("Commandline Arguments", emph=True):
         for argument, value in sorted(vars(opt).items()):
-            if type(value) in (str, int, float, tuple, list):
+            if type(value) in (str, int, float, tuple, list, bool):
                 logging.info('{}: {}'.format(argument, value))
 
     with logger.LoggingBlock("Experiment Summary", emph=True):
