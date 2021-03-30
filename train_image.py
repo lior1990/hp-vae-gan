@@ -255,6 +255,53 @@ def train(opt, netG):
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
+    samples_folder = os.path.join(opt.saver.experiment_dir, f"generated_images_{opt.scale_idx}")
+    os.makedirs(samples_folder, exist_ok=True)
+    eval_netG(opt.eval_dataset, samples_folder, opt, netG)
+
+
+def eval_netG(image_path, save_dir, opt, netG):
+    import matplotlib.pyplot as plt
+
+    original_image_path = opt.image_path
+    original_rep = opt.data_rep
+    opt.image_path = image_path
+    opt.data_rep = 1
+    dataset = MultipleImageDataset(opt)
+    test_data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
+
+    with torch.no_grad():
+        def norm(t):
+            def norm_ip(img, min, max):
+                img.clamp_(min=min, max=max)
+                img.add_(-min).div_(max - min + 1e-5)
+
+            norm_ip(t, float(t.min()), float(t.max()))
+
+        def plot_tensor(t, ax):
+            norm(t)
+            ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
+
+        for idx, (img, img_zero) in enumerate(test_data_loader):
+            fig, axes = plt.subplots(1, 2, figsize=(20, 5))
+
+            for plot_idx in range(2):
+                axes[plot_idx].set_xticks([])
+                axes[plot_idx].set_yticks([])
+
+            if type(img_zero) == list:
+                img_zero = img_zero[0]
+            img_zero = img_zero.to(opt.device)
+            rec_output = netG(img_zero, opt.Noise_Amps, mode="rec")[0]
+
+            plot_tensor(img[0], axes[0])
+            plot_tensor(rec_output, axes[1])
+            fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
+            plt.close(fig)
+
+    opt.image_path = original_image_path
+    opt.data_rep = original_rep
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -324,6 +371,7 @@ if __name__ == '__main__':
     parser.add_argument('--embedding_dim', type=int, default=64, help='embedding dimension (values of the vqvae dict)')
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
+    parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
