@@ -57,6 +57,7 @@ def train(opt, netG):
             parameter_list += [{"params": netG.encoder_content.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.encoder_texture.parameters(),
                                 "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.vector_quantization_texture.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
     else:
         if len(netG.body) < opt.train_depth:
@@ -113,8 +114,6 @@ def train(opt, netG):
             real_zero = real_zero.to(opt.device)
         else:
             real_zero, real_zero_transformed = data
-            real_zero = real_zero.to(opt.device)
-            real_transformed = real_zero_transformed.to(opt.device)
             real_zero = torch.cat([real_zero, real_zero_transformed], dim=0).to(opt.device)
             real = real_zero
 
@@ -123,13 +122,13 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, (z_content, z_texture) = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, (z_content, z_texture), embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
             vqvae_loss = opt.rec_weight * rec_vae_loss
 
-            total_loss += vqvae_loss
+            total_loss += vqvae_loss + embedding_loss
 
             if opt.scale_idx == 0:
                 z_content_real, z_content_transformed = torch.split(z_content, 2, dim=0)
@@ -194,8 +193,8 @@ def train(opt, netG):
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.scale_idx == 0:
                 opt.summary.add_scalar('Video/Scale {}/content loss'.format(opt.scale_idx), content_loss.item(), iteration)
-                opt.summary.add_scalar('Video/Scale {}/texture loss'.format(opt.scale_idx), texture_loss.item(),
-                                       iteration)
+                opt.summary.add_scalar('Video/Scale {}/texture loss'.format(opt.scale_idx), texture_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
 
             if opt.vae_levels < opt.scale_idx + 1:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)

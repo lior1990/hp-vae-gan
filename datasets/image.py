@@ -17,7 +17,7 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         self.zero_scale_frames = None
         self.frames = None
         self.opt = opt
-        self.grayscale = transforms.Grayscale()
+        self.grayscale = transforms.Grayscale(num_output_channels=3)
         self.color_jitter = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
         self.to_pil = transforms.ToPILImage()
         self.normalize = transforms.Normalize((0.5,), (0.5,))
