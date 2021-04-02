@@ -247,12 +247,13 @@ class GeneratorHPVAEGAN(nn.Module):
         self.N = N
 
         vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
-        self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
+        self.encoder_content = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
+        self.encoder_texture = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
         self.vector_quantization = VectorQuantizer(opt.n_embeddings, vqvae_embedding_dim, opt.vqvae_beta)
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
+        self.decoder.add_module('head', ConvBlock2D(2*opt.embedding_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
         for i in range(opt.enc_blocks-1):
             if opt.pooling:
                 block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
@@ -279,13 +280,15 @@ class GeneratorHPVAEGAN(nn.Module):
             self.body.append(copy.deepcopy(self.body[-1]))
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand'):
-        z_e = self.encode(img)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
-        vqvae_out = torch.tanh(self.decoder(z_q))
+        z_content = self.encoder_content(img)
+        z_texture = self.encoder_texture(img)
+        # z_e = self.encode(img)
+        # embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
+        vqvae_out = torch.tanh(self.decoder(torch.cat([z_content, z_texture], dim=1)))
 
         x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
-        return x_prev_out, embedding_loss
+        return x_prev_out, (z_content, z_texture)
 
     def encode(self, img):
         z_e = self.vqvae_encode(img)

@@ -46,26 +46,22 @@ def train(opt, netG):
     # Generator Adversary
 
     if not opt.train_all:
-        if opt.vae_levels < opt.scale_idx + 1:
-            train_depth = min(opt.train_depth, len(netG.body) - opt.vae_levels + 1)
+        if opt.scale_idx > 0:
+            train_depth = opt.train_depth
             parameter_list += [
                 {"params": block.parameters(),
                  "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
                 for idx, block in enumerate(netG.body[-train_depth:])]
         else:
             # VQVAE
-            parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.vector_quantization.parameters(),
+            parameter_list += [{"params": netG.encoder_content.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.encoder_texture.parameters(),
                                 "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
-            parameter_list += [
-                {"params": block.parameters(),
-                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body) - 1 - idx))}
-                for idx, block in enumerate(netG.body)]
     else:
         if len(netG.body) < opt.train_depth:
-            parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.vector_quantization.parameters(),
+            parameter_list += [{"params": netG.encoder_content.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.encoder_texture.parameters(),
                                 "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
             parameter_list += [
@@ -99,6 +95,9 @@ def train(opt, netG):
     }
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
+    l1_loss = torch.nn.L1Loss()
+    l2_loss = torch.nn.MSELoss()
+
     iterator = iter(data_loader)
 
     for iteration in epoch_iterator:
@@ -109,57 +108,37 @@ def train(opt, netG):
             data = next(iterator)
 
         if opt.scale_idx > 0:
-            real_tup, real_zero_tup = data
-            real, real_transformed = real_tup
-            real_zero, real_zero_transformed = real_zero_tup
+            real_zero, real = data
             real = real.to(opt.device)
-            real_transformed = real_transformed.to(opt.device)
             real_zero = real_zero.to(opt.device)
-            real_zero_transformed = real_zero_transformed.to(opt.device)
         else:
-            real_tup = data
-            real, real_transformed = real_tup
-            real = real.to(opt.device)
-            real_transformed = real_transformed.to(opt.device)
-            real_zero, real_zero_transformed = real, real_transformed
-
-        initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [int(initial_size * opt.ar), initial_size]
-        opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
-
-        noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
-
-        ############################
-        # calculate noise_amp
-        ###########################
-        if iteration == 0:
-            if opt.const_amp:
-                opt.Noise_Amps.append(1)
-            else:
-                with torch.no_grad():
-                    if opt.scale_idx == 0:
-                        opt.noise_amp = 1
-                        opt.Noise_Amps.append(opt.noise_amp)
-                    else:
-                        opt.Noise_Amps.append(0)
-                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
-
-                        RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
-                        opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
-                        opt.Noise_Amps[-1] = opt.noise_amp
+            real_zero, real_zero_transformed = data
+            real_zero = real_zero.to(opt.device)
+            real_transformed = real_zero_transformed.to(opt.device)
+            real_zero = torch.cat([real_zero, real_zero_transformed], dim=0).to(opt.device)
+            real = real_zero
 
         ############################
         # (1) Update VAE network
         ###########################
         total_loss = 0
 
-        generated, embedding_loss = G_curr(real_zero_transformed, opt.Noise_Amps, mode="rec")
+        generated, (z_content, z_texture) = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
-            vqvae_loss = opt.rec_weight * rec_vae_loss + embedding_loss
+            vqvae_loss = opt.rec_weight * rec_vae_loss
 
             total_loss += vqvae_loss
+
+            if opt.scale_idx == 0:
+                z_content_real, z_content_transformed = torch.split(z_content, 2, dim=0)
+                z_texture_real, z_texture_transformed = torch.split(z_texture, 2, dim=0)
+
+                content_loss = l1_loss(z_content_real, z_content_transformed)
+                texture_loss = -l2_loss(z_texture_real, z_texture_transformed)
+
+                total_loss += content_loss + texture_loss
         else:
             ############################
             # (2) Update D network: maximize D(x) + D(G(z))
@@ -174,7 +153,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
+            fake = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")[0]
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -213,11 +192,13 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
-                opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
-            else:
-                opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
+            if opt.scale_idx == 0:
+                opt.summary.add_scalar('Video/Scale {}/content loss'.format(opt.scale_idx), content_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/texture loss'.format(opt.scale_idx), texture_loss.item(),
+                                       iteration)
+
             if opt.vae_levels < opt.scale_idx + 1:
+                opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
@@ -228,13 +209,11 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        noise_init = utils.generate_noise(ref=noise_init)
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
+                        fake = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")[0]
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
-                opt.summary.visualize_image(opt, iteration, real_transformed, 'Real Transformed')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
@@ -282,19 +261,17 @@ def eval_netG(image_path, save_dir, opt, netG):
             norm(t)
             ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
 
-        for idx, (img, img_zero) in enumerate(test_data_loader):
+        for idx, (img_zero, img) in enumerate(test_data_loader):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
 
             for plot_idx in range(2):
                 axes[plot_idx].set_xticks([])
                 axes[plot_idx].set_yticks([])
 
-            if type(img_zero) == list:
-                img_zero = img_zero[0]
             img_zero = img_zero.to(opt.device)
             rec_output = netG(img_zero, opt.Noise_Amps, mode="rec")[0]
 
-            plot_tensor(img[0], axes[0])
+            plot_tensor(img if opt.scale_idx > 0 else img_zero, axes[0])
             plot_tensor(rec_output, axes[1])
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)

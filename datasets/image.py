@@ -17,29 +17,33 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         self.zero_scale_frames = None
         self.frames = None
         self.opt = opt
-        self.random_grayscale = transforms.RandomGrayscale(0.2)
+        self.grayscale = transforms.Grayscale()
         self.color_jitter = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
         self.to_pil = transforms.ToPILImage()
         self.normalize = transforms.Normalize((0.5,), (0.5,))
         self.to_tensor = transforms.ToTensor()
 
     def _transform_image(self, image, scale_index: int, hflip: bool):
-        images_zero_scale = self._generate_image(image, scale_index)
-        images_zero_scale = K.image_to_tensor(images_zero_scale)
-        images_zero_scale = images_zero_scale / 255
+        image_batch = self._generate_image(image, scale_index)
+        image_batch = K.image_to_tensor(image_batch)
+        image_batch = image_batch / 255
         if hflip:
-            images_zero_scale = K.hflip(images_zero_scale)
-        images_zero_scale_transformed = self._get_transformed_images(images_zero_scale)
-        images_zero_scale = self.normalize(images_zero_scale)
-        return images_zero_scale, images_zero_scale_transformed
+            image_batch = K.hflip(image_batch)
+        if self.opt.scale_idx == 0:
+            image_batch_transformed = self._get_transformed_images(image_batch)
+            image_batch = self.normalize(image_batch)
+            return image_batch, image_batch_transformed
+        else:
+            return self.normalize(image_batch)
 
     def _get_transformed_images(self, images):
         images_transformed = self.to_pil(images)
 
-        if self.opt.vae_levels >= self.opt.scale_idx + 1:
-            if random.random() > 0.5:
+        if self.opt.scale_idx == 0:
+            if random.random() > 0.2:
                 images_transformed = self.color_jitter(images_transformed)
-            images_transformed = self.random_grayscale(images_transformed)
+            else:
+                images_transformed = self.grayscale(images_transformed)
 
         # Normalize
         images_transformed = self.to_tensor(images_transformed)
@@ -62,15 +66,13 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         # Horizontal flip (Until Kornia will handle videos
         hflip = random.random() < 0.5 if self.opt.hflip else False
 
-        image, image_transformed = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
-
-        # Extract o-level index
-        if self.opt.scale_idx > 0:
+        if self.opt.scale_idx == 0:
             images_zero_scale, images_zero_scale_transformed = self._transform_image(image_full_scale, 0, hflip)
-
-            return [(image, image_transformed), (images_zero_scale, images_zero_scale_transformed)]
-
-        return image, image_transformed
+            return images_zero_scale, images_zero_scale_transformed
+        else:
+            image_zero_scale = self._transform_image(image_full_scale, 0, hflip)
+            image = self._transform_image(image_full_scale, self.opt.scale_idx, hflip)
+            return image_zero_scale, image
 
     @abstractmethod
     def _get_image(self, idx):
