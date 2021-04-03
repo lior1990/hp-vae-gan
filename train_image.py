@@ -248,6 +248,7 @@ def eval_netG(image_path, save_dir, opt, netG):
     dataset = MultipleImageDataset(opt)
     test_data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
 
+    netG.eval()
     with torch.no_grad():
         def norm(t):
             def norm_ip(img, min, max):
@@ -275,6 +276,7 @@ def eval_netG(image_path, save_dir, opt, netG):
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
 
+    netG.train()
     opt.image_path = original_image_path
     opt.data_rep = original_rep
 
