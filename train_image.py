@@ -57,7 +57,6 @@ def train(opt, netG):
             parameter_list += [{"params": netG.encoder_content.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.encoder_texture.parameters(),
                                 "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.vector_quantization_texture.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.vqvae_encoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.vector_quantization.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
