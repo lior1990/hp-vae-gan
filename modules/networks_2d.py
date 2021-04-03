@@ -60,6 +60,10 @@ class ConvBlock2D(nn.Sequential):
             self.add_module('norm', nn.BatchNorm2d(out_channel))
         elif bn == "instance":
             self.add_module('norm', nn.InstanceNorm2d(out_channel))
+        elif bn in [False, "none", None]:
+            pass
+        else:
+            raise NotImplementedError
 
         if act is not None:
             self.add_module(act, get_activation(act))

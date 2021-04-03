@@ -310,8 +310,8 @@ if __name__ == '__main__':
     parser.add_argument('--padd-size', type=int, default=1, help='net pad size')
     parser.add_argument('--padding-mode', type=str, default="zeros", help='net padding mode')
     parser.add_argument('--encoder-normalization-method', type=str, default="spectral", help='encoder normalization method')
-    parser.add_argument('--decoder-normalization-method', type=str, default="bn", help='decoder normalization method')
-    parser.add_argument('--g-normalization-method', type=str, default="bn", help='generator normalization method')
+    parser.add_argument('--decoder-normalization-method', type=str, default="batch", help='decoder normalization method')
+    parser.add_argument('--g-normalization-method', type=str, default="batch", help='generator normalization method')
     parser.add_argument('--generator', type=str, default='GeneratorHPVAEGAN', help='generator model')
     parser.add_argument('--discriminator', type=str, default='WDiscriminator2D', help='discriminator model')
 
