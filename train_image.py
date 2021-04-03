@@ -58,7 +58,11 @@ def train(opt, netG):
                                {"params": netG.encoder_texture.parameters(),
                                 "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
                                {"params": netG.vector_quantization_texture.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.vqvae_encoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.vector_quantization.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
+                               {"params": netG.vqvae_decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}
+                               ]
     else:
         if len(netG.body) < opt.train_depth:
             parameter_list += [{"params": netG.encoder_content.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -122,7 +126,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, (z_content, z_texture), embedding_loss = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+        generated, (z_content, z_texture), embedding_loss, generated_content = G_curr(real_zero, opt.Noise_Amps, mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -137,7 +141,9 @@ def train(opt, netG):
                 content_loss = l1_loss(z_content_real, z_content_transformed)
                 texture_loss = -l2_loss(z_texture_real, z_texture_transformed)
 
-                total_loss += content_loss + texture_loss
+                content_rec_loss = opt.rec_weight * opt.rec_loss(generated_content, real)
+
+                total_loss += content_loss + texture_loss + content_rec_loss
         else:
             ############################
             # (2) Update D network: maximize D(x) + D(G(z))
@@ -192,6 +198,7 @@ def train(opt, netG):
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.scale_idx == 0:
+                opt.summary.add_scalar('Video/Scale {}/content loss'.format(opt.scale_idx), content_rec_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/content loss'.format(opt.scale_idx), content_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/texture loss'.format(opt.scale_idx), texture_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
@@ -213,8 +220,11 @@ def train(opt, netG):
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
+                opt.summary.visualize_image(opt, iteration, generated_content, 'Generated content')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
+                if opt.scale_idx == 0:
+                    opt.summary.visualize_image(opt, iteration, z_content, 'Z content')
 
     epoch_iterator.close()
 
@@ -350,6 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
+    parser.add_argument('--n_interpolations', type=int, default=3)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
