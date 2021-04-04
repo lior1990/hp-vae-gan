@@ -54,16 +54,21 @@ def reparameterize_bern(x, training):
 class ConvBlock2D(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size, padding, stride, bn="batch", act='lrelu', padding_mode="zeros"):
         super(ConvBlock2D, self).__init__()
-        self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
-                                          stride=stride, padding=padding, padding_mode=padding_mode))
-        if bn == "batch":
-            self.add_module('norm', nn.BatchNorm2d(out_channel))
-        elif bn == "instance":
-            self.add_module('norm', nn.InstanceNorm2d(out_channel))
-        elif bn in [False, "none", None]:
-            pass
+
+        if bn =="spectral":
+            self.add_module('conv', nn.utils.spectral_norm(nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
+                                          stride=stride, padding=padding, padding_mode=padding_mode)))
         else:
-            raise NotImplementedError
+            self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
+                                              stride=stride, padding=padding, padding_mode=padding_mode))
+            if bn == "batch":
+                self.add_module('norm', nn.BatchNorm2d(out_channel))
+            elif bn == "instance":
+                self.add_module('norm', nn.InstanceNorm2d(out_channel))
+            elif bn in [False, "none", None]:
+                pass
+            else:
+                raise NotImplementedError
 
         if act is not None:
             self.add_module(act, get_activation(act))
