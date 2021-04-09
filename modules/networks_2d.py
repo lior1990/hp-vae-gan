@@ -264,7 +264,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
         for i in range(opt.enc_blocks-1):
             if opt.pooling:
-                block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1)
+                block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, bn=opt.decoder_normalization_method)
             else:
                 block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method)
             self.decoder.add_module('block%d' % (i), block)
@@ -295,6 +295,34 @@ class GeneratorHPVAEGAN(nn.Module):
         x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
         return x_prev_out, embedding_loss
+
+    def forward_w_interpolation(self, img_all_scales, interpolation_indices):
+        if interpolation_indices is None:
+            interpolation_indices = {}
+
+        mode = "rec"
+        z_e = self.encode(img_all_scales[0])
+        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
+        vqvae_out = torch.tanh(self.decoder(z_q))
+
+        x_prev_out = self.refinement_layers_w_interpolation(vqvae_out, img_all_scales, interpolation_indices)
+
+        return x_prev_out, embedding_loss
+
+    def refinement_layers_w_interpolation(self, x_prev_out, img_all_scales, interpolation_indices: "Dict[int, float]"):
+        for idx, block in enumerate(self.body):
+            # Upscale
+            x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+
+            if idx in interpolation_indices:
+                interpolation_value = interpolation_indices[idx]
+                x_prev_out_up += img_all_scales[idx+1] * interpolation_value + x_prev_out_up * (1-interpolation_value)
+
+            x_prev = block(x_prev_out_up)
+
+            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+
+        return x_prev_out
 
     def encode(self, img):
         z_e = self.vqvae_encode(img)

@@ -130,3 +130,10 @@ class MultipleImageDataset(ImageDataset):
 
     def _get_image(self, idx):
         return self.images[idx % self.num_of_images]
+
+
+class AllScalesMultipleImageDataset(MultipleImageDataset):
+    def __getitem__(self, idx):
+        image_full_scale = self._get_image(idx)
+
+        return [self._transform_image(image_full_scale, i, False)[0] for i in range(self.opt.scale_idx)]

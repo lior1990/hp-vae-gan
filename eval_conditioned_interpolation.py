@@ -7,8 +7,9 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 
 import utils
-from datasets.image import SingleImageDataset, MultipleImageDataset
+from datasets.image import SingleImageDataset, MultipleImageDataset, AllScalesMultipleImageDataset
 from modules import networks_2d
+
 
 
 def parse_opt():
@@ -84,9 +85,13 @@ def parse_opt():
     opt = parser.parse_args()
     return opt
 
+
 keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size",
-        "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method", "padding_mode", "interpolation_method"]
+        "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method",
+        "padding_mode", "interpolation_method"]
 results = {}
+
+
 def load_params(net_g_path):
     folder = os.path.dirname(net_g_path)
     f = open(os.path.join(folder, "logbook.txt"))
@@ -174,11 +179,10 @@ def init(opt):
     return netG
 
 
-def eval_netG(image_path, save_dir, opt, netG):
+def eval_netG(image_path, save_dir, opt, netG, interpolation_indices):
     opt.image_path = image_path
-    dataset = MultipleImageDataset(opt)
+    dataset = AllScalesMultipleImageDataset(opt)
     test_data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
-
     netG.eval()
     with torch.no_grad():
         def norm(t):
@@ -190,42 +194,60 @@ def eval_netG(image_path, save_dir, opt, netG):
 
         def plot_tensor(t, ax):
             norm(t)
-            ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
+            ax.imshow(t.squeeze().permute((1, 2, 0)))
 
-        for idx, (img, img_zero) in enumerate(test_data_loader):
+        for idx, imgs in enumerate(test_data_loader):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
 
             for plot_idx in range(2):
                 axes[plot_idx].set_xticks([])
                 axes[plot_idx].set_yticks([])
 
-            img_zero[0] = img_zero[0].to(opt.device)
-            rec_output = netG(img_zero[0], opt.Noise_Amps, mode="rec")[0]
+            imgs = [img.to(opt.device) for img in imgs]
+            rec_output = netG.forward_w_interpolation(imgs, interpolation_indices)[0]
 
-            plot_tensor(img[0], axes[0])
+            plot_tensor(imgs[-1], axes[0])
             plot_tensor(rec_output, axes[1])
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
 
 
 def main():
-    base_folder = r"run/5imgs-2-pos-enc-aug-hflip-t-all-scales-final"
+    base_folder = r"run\vqvae-2imgs-enc-blocks"
     dataset_for_eval = "data/imgs/misc/"
     experiments = os.listdir(base_folder)
+    exp_to_generate = ["experiment_3"]
+    configurations = [
+        ({}, "regular"),
+        ({0: 0.1}, "exp0"),
+        ({1: 0.1}, "exp1"),
+        ({2: 0.1}, "exp2"),
+        ({3: 0.1}, "exp3"),
+        ({4: 0.1}, "exp4"),
+        ({5: 0.1}, "exp5"),
+        ({14: 0.1}, "exp14"),
+        ({14: 1}, "exp_reverse"),
+    ]
+
     for exp in experiments:
+        if exp not in exp_to_generate:
+            print(f"Skipping on {exp}")
+            continue
         print(f"Working on {exp}")
         opt = parse_opt()
         exp_folder = os.path.join(base_folder, exp)
-        samples_folder = os.path.join(exp_folder, "generated_images")
-        os.makedirs(samples_folder, exist_ok=True)
-        opt.netG = os.path.join(exp_folder, "netG.pth")
-        params = load_params(opt.netG)
-        for k, v in params.items():
-            setattr(opt, k, v)
-        netG = init(opt)
-        print(f"Starting eval on {exp}. Dataset: {dataset_for_eval}. Results will be save on {samples_folder}")
-        eval_netG(dataset_for_eval, samples_folder, opt, netG)
-        print("Done")
+        for interpolation_indices, name in configurations:
+            samples_folder = os.path.join(exp_folder, f"generated_images_{name}")
+            os.makedirs(samples_folder, exist_ok=True)
+            opt.netG = os.path.join(exp_folder, "netG.pth")
+            params = load_params(opt.netG)
+            for k, v in params.items():
+                setattr(opt, k, v)
+            netG = init(opt)
+            print(f"Starting eval on {exp}. Dataset: {dataset_for_eval}. Results will be save on {samples_folder}")
+            print(f"Scale: {opt.scale_idx}")
+            eval_netG(dataset_for_eval, samples_folder, opt, netG, interpolation_indices)
+            print("Done")
 
 
 if __name__ == '__main__':
