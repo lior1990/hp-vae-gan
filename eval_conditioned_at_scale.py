@@ -225,14 +225,15 @@ def main():
         print(f"Working on {exp}")
         opt = parse_opt()
         exp_folder = os.path.join(base_folder, exp)
+
+        opt.netG = os.path.join(exp_folder, "netG.pth")
+        params = load_params(opt.netG)
+        for k, v in params.items():
+            setattr(opt, k, v)
+        netG = init(opt)
         for scale_idx in range(opt.scale_idx):
             samples_folder = os.path.join(exp_folder, f"generated_images_scale{scale_idx}")
             os.makedirs(samples_folder, exist_ok=True)
-            opt.netG = os.path.join(exp_folder, "netG.pth")
-            params = load_params(opt.netG)
-            for k, v in params.items():
-                setattr(opt, k, v)
-            netG = init(opt)
             print(f"Starting eval on {exp}. Dataset: {dataset_for_eval}. Results will be save on {samples_folder}")
             print(f"Scale: {opt.scale_idx}")
             eval_netG(dataset_for_eval, samples_folder, opt, netG, scale_idx)
