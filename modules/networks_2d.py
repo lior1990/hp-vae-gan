@@ -324,6 +324,20 @@ class GeneratorHPVAEGAN(nn.Module):
 
         return x_prev_out
 
+    def refinement_interpolation_at_scale(self, img_all_scales, start_scale):
+        for idx, block in enumerate(self.body[start_scale:], start_scale):
+            # Upscale
+            if idx == start_scale:
+                x_prev_out_up = img_all_scales[start_scale]
+            else:
+                x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+
+            x_prev = block(x_prev_out_up)
+
+            x_prev_out = torch.tanh(x_prev + x_prev_out_up)
+
+        return x_prev_out
+
     def encode(self, img):
         z_e = self.vqvae_encode(img)
         positional_encoding = utils.convert_to_coord_format(z_e.shape[0], z_e.shape[-2], z_e.shape[-1], device=self.opt.device)
