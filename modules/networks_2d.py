@@ -316,7 +316,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
             if idx in interpolation_indices:
                 interpolation_value = interpolation_indices[idx]
-                x_prev_out_up += img_all_scales[idx+1] * interpolation_value + x_prev_out_up * (1-interpolation_value)
+                x_prev_out_up = img_all_scales[idx+1] * interpolation_value + x_prev_out_up * (1-interpolation_value)
 
             x_prev = block(x_prev_out_up)
 

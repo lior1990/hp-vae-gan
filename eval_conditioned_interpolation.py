@@ -206,14 +206,14 @@ def eval_netG(image_path, save_dir, opt, netG, interpolation_indices):
             imgs = [img.to(opt.device) for img in imgs]
             rec_output = netG.forward_w_interpolation(imgs, interpolation_indices)[0]
 
-            plot_tensor(imgs[-1], axes[0])
-            plot_tensor(rec_output, axes[1])
+            plot_tensor(imgs[-1].cpu(), axes[0])
+            plot_tensor(rec_output.cpu(), axes[1])
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
 
 
 def main():
-    base_folder = r"run\vqvae-2imgs-enc-blocks"
+    base_folder = r"run/vqvae-2imgs-enc-blocks"
     dataset_for_eval = "data/imgs/misc/"
     experiments = os.listdir(base_folder)
     exp_to_generate = ["experiment_3"]
