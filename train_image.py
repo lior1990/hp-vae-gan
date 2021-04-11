@@ -105,51 +105,20 @@ def train(opt, netG):
             data = next(iterator)
 
         if opt.scale_idx > 0:
-            real_tup, real_zero_tup = data
-            real, real_transformed = real_tup
-            real_zero, real_zero_transformed = real_zero_tup
+            real, real_zero = data
             real = real.to(opt.device)
-            real_transformed = real_transformed.to(opt.device)
             real_zero = real_zero.to(opt.device)
-            real_zero_transformed = real_zero_transformed.to(opt.device)
         else:
-            real_tup = data
-            real, real_transformed = real_tup
+            real = data
             real = real.to(opt.device)
-            real_transformed = real_transformed.to(opt.device)
-            real_zero, real_zero_transformed = real, real_transformed
-
-        initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-        initial_size = [int(initial_size * opt.ar), initial_size]
-        opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
-
-        noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
-
-        ############################
-        # calculate noise_amp
-        ###########################
-        if iteration == 0:
-            if opt.const_amp:
-                opt.Noise_Amps.append(1)
-            else:
-                with torch.no_grad():
-                    if opt.scale_idx == 0:
-                        opt.noise_amp = 1
-                        opt.Noise_Amps.append(opt.noise_amp)
-                    else:
-                        opt.Noise_Amps.append(0)
-                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
-
-                        RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
-                        opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
-                        opt.Noise_Amps[-1] = opt.noise_amp
+            real_zero = real
 
         ############################
         # (1) Update VAE network
         ###########################
         total_loss = 0
 
-        generated, embedding_loss = G_curr(real_zero_transformed, opt.Noise_Amps, mode="rec")
+        generated, embedding_loss = G_curr(real_zero, [], mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -170,7 +139,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
+            fake, _ = G_curr(real_zero, [], mode="vq_rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -224,25 +193,21 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        noise_init = utils.generate_noise(ref=noise_init)
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, noise_init=noise_init, mode="vq_rand")
+                        fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
-                opt.summary.visualize_image(opt, iteration, real_transformed, 'Real Transformed')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
 
     epoch_iterator.close()
 
     # Save data
-    opt.saver.save_checkpoint({'data': opt.Noise_Amps}, 'Noise_Amps.pth')
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
         'state_dict': netG.state_dict(),
         'optimizer': optimizerG.state_dict(),
-        'noise_amps': opt.Noise_Amps,
     }, 'netG.pth')
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
@@ -279,19 +244,22 @@ def eval_netG(image_path, save_dir, opt, netG):
             norm(t)
             ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
 
-        for idx, (img, img_zero) in enumerate(test_data_loader):
+        for idx, img_tup in enumerate(test_data_loader):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
+
+            if opt.scale_idx > 0:
+                _, real_zero = img_tup
+            else:
+                real_zero = img_tup
 
             for plot_idx in range(2):
                 axes[plot_idx].set_xticks([])
                 axes[plot_idx].set_yticks([])
 
-            if type(img_zero) == list:
-                img_zero = img_zero[0]
-            img_zero = img_zero.to(opt.device)
-            rec_output = netG(img_zero, opt.Noise_Amps, mode="rec")[0]
+            real_zero = real_zero.to(opt.device)
+            rec_output = netG(real_zero, opt.Noise_Amps, mode="rec")[0]
 
-            plot_tensor(img[0], axes[0])
+            plot_tensor(real_zero, axes[0])
             plot_tensor(rec_output, axes[1])
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
