@@ -50,8 +50,7 @@ def interpolate_3D(input, size=None, scale_factor=None, interpolation='trilinear
 
 def adjust_scales2image(size, opt):
     if opt.fixed_scales:
-        opt.num_scales = len(FIXED_SIZES)
-        opt.stop_scale = len(FIXED_SIZES)
+        opt.stop_scale = len(FIXED_SIZES) - 1
     else:
         opt.num_scales = math.ceil((math.log(math.pow(opt.min_size / size, 1), opt.scale_factor_init))) + 1
         scale2stop = math.ceil(math.log(min([opt.max_size, size]) / size, opt.scale_factor_init))
