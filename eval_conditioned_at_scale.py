@@ -80,6 +80,7 @@ def parse_opt():
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
+    parser.add_argument('--fixed-scales', action='store_true', default=False, help='use hard-coded scales')
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -88,7 +89,7 @@ def parse_opt():
 
 keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size",
         "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method",
-        "padding_mode", "interpolation_method"]
+        "padding_mode", "interpolation_method", "fixed_scales"]
 results = {}
 
 

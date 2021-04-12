@@ -231,6 +231,11 @@ def eval_netG(image_path, save_dir, opt, netG):
     dataset = MultipleImageDataset(opt)
     test_data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
 
+    fakes_folder = os.path.join(save_dir, "fakes")
+    reals_folder = os.path.join(save_dir, "reals")
+    os.makedirs(fakes_folder, exist_ok=True)
+    os.makedirs(reals_folder, exist_ok=True)
+
     netG.eval()
     with torch.no_grad():
         def norm(t):
@@ -240,9 +245,9 @@ def eval_netG(image_path, save_dir, opt, netG):
 
             norm_ip(t, float(t.min()), float(t.max()))
 
-        def plot_tensor(t, ax):
+        def tensor_to_plot(t):
             norm(t)
-            ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
+            return t.squeeze().cpu().permute((1, 2, 0)).numpy()
 
         for idx, img_tup in enumerate(test_data_loader):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
@@ -259,10 +264,14 @@ def eval_netG(image_path, save_dir, opt, netG):
             real_zero = real_zero.to(opt.device)
             rec_output = netG(real_zero, opt.Noise_Amps, mode="rec")[0]
 
-            plot_tensor(real_zero, axes[0])
-            plot_tensor(rec_output, axes[1])
+            real_tensor_to_plot = tensor_to_plot(real_zero)
+            rec_tensor_to_plot = tensor_to_plot(rec_output)
+            axes[0].imshow(real_tensor_to_plot)
+            axes[1].imshow(rec_tensor_to_plot)
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
+            plt.imsave(os.path.join(reals_folder, f"real_{idx}.png"), real_tensor_to_plot)
+            plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
 
     netG.train()
     opt.image_path = original_image_path
@@ -301,6 +310,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-size', type=int, default=256, help='image minimal size at the coarser scale')
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
     parser.add_argument('--interpolation-method', type=str, default="bilinear", help="upscale interpolation method")
+    parser.add_argument('--fixed-scales', action='store_true', default=False, help='use hard-coded scales')
 
     # optimization hyper parameters:
     parser.add_argument('--niter', type=int, default=50000, help='number of iterations to train per scale')

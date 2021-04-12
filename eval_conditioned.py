@@ -57,6 +57,7 @@ def parse_opt():
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', action='store_true', default=False, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
+    parser.add_argument('--fixed-scales', action='store_true', default=False, help='use hard-coded scales')
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
@@ -84,9 +85,13 @@ def parse_opt():
     opt = parser.parse_args()
     return opt
 
+
 keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size",
-        "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method", "padding_mode", "interpolation_method"]
+        "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method",
+        "padding_mode", "interpolation_method", "fixed_scales"]
 results = {}
+
+
 def load_params(net_g_path):
     folder = os.path.dirname(net_g_path)
     f = open(os.path.join(folder, "logbook.txt"))

@@ -5,6 +5,27 @@ import math
 __all__ = ['interpolate', 'interpolate_3D', 'adjust_scales2image', 'generate_noise', 'get_scales_by_index',
            'get_fps_td_by_index', 'get_fps_by_index', 'upscale', 'upscale_2d', 'convert_to_coord_format']
 
+FIXED_SIZES = [
+            [21, 32],
+            [25, 38],
+            [29, 44],
+            [33, 50],
+            [39, 58],
+            [45, 68],
+            [53, 79],
+            [61, 91],
+            [71, 106],
+            [82, 122],
+            [95, 142],
+            [106, 157],
+            [116, 173],
+            [126, 186],
+            [135, 200],
+            [142, 211],
+            [149, 221],
+            [156, 232],
+        ]
+
 
 def interpolate(input, size=None, scale_factor=None, interpolation='bilinear'):
     if input.dim() == 5:
@@ -28,13 +49,17 @@ def interpolate_3D(input, size=None, scale_factor=None, interpolation='trilinear
 
 
 def adjust_scales2image(size, opt):
-    opt.num_scales = math.ceil((math.log(math.pow(opt.min_size / size, 1), opt.scale_factor_init))) + 1
-    scale2stop = math.ceil(math.log(min([opt.max_size, size]) / size, opt.scale_factor_init))
-    opt.stop_scale = opt.num_scales - scale2stop
-    opt.scale1 = min(opt.max_size / size, 1)
-    opt.scale_factor = math.pow(opt.min_size / size, 1 / opt.stop_scale)
-    scale2stop = math.ceil(math.log(min([opt.max_size, size]) / size, opt.scale_factor_init))
-    opt.stop_scale = opt.num_scales - scale2stop
+    if opt.fixed_scales:
+        opt.num_scales = len(FIXED_SIZES)
+        opt.stop_scale = len(FIXED_SIZES)
+    else:
+        opt.num_scales = math.ceil((math.log(math.pow(opt.min_size / size, 1), opt.scale_factor_init))) + 1
+        scale2stop = math.ceil(math.log(min([opt.max_size, size]) / size, opt.scale_factor_init))
+        opt.stop_scale = opt.num_scales - scale2stop
+        opt.scale1 = min(opt.max_size / size, 1)
+        opt.scale_factor = math.pow(opt.min_size / size, 1 / opt.stop_scale)
+        scale2stop = math.ceil(math.log(min([opt.max_size, size]) / size, opt.scale_factor_init))
+        opt.stop_scale = opt.num_scales - scale2stop
 
 
 def generate_noise(ref=None, size=None, type='normal', emb_size=None, device=None):
@@ -58,13 +83,16 @@ def generate_noise(ref=None, size=None, type='normal', emb_size=None, device=Non
     return noise.uniform_(0, 1)  # Default == Uniform
 
 
-def get_scales_by_index(index, scale_factor, stop_scale, img_size):
-    scale = math.pow(scale_factor, stop_scale - index)
-    s_size = math.ceil(scale * img_size)
+def get_scales_by_index(index, scale_factor, stop_scale, img_size, use_fixed_scales):
+    # todo: change the "jump" between the sizes in the last scales
+    if use_fixed_scales:
+        return FIXED_SIZES[index][1]
+    else:
+        scale = math.pow(scale_factor, stop_scale - index)
+        s_size = math.ceil(scale * img_size)
 
-    s_size -= s_size % 4
-
-    return s_size
+        # s_size -= s_size % 4  # for pooling support
+        return s_size
 
 
 def get_fps_by_index(index, opt):
@@ -86,7 +114,7 @@ def get_fps_td_by_index(index, opt):
 def upscale(video, index, opt):
     assert index > 0
 
-    next_shape = get_scales_by_index(index, opt.scale_factor, opt.stop_scale, opt.img_size)
+    next_shape = get_scales_by_index(index, opt.scale_factor, opt.stop_scale, opt.img_size, opt.fixed_scales)
     next_fps, next_td, _ = get_fps_td_by_index(index, opt)
     next_shape = [next_td, int(next_shape * opt.ar), next_shape]
 
@@ -99,7 +127,7 @@ def upscale(video, index, opt):
 def upscale_2d(image, index, opt):
     assert index > 0
 
-    next_shape = get_scales_by_index(index, opt.scale_factor, opt.stop_scale, opt.img_size)
+    next_shape = get_scales_by_index(index, opt.scale_factor, opt.stop_scale, opt.img_size, opt.fixed_scales)
     next_shape = [int(next_shape * opt.ar), next_shape]
 
     # Video interpolation
