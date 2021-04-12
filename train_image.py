@@ -253,9 +253,10 @@ def eval_netG(image_path, save_dir, opt, netG):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
 
             if opt.scale_idx > 0:
-                _, real_zero = img_tup
+                real, real_zero = img_tup
             else:
                 real_zero = img_tup
+                real = real_zero
 
             for plot_idx in range(2):
                 axes[plot_idx].set_xticks([])
@@ -264,7 +265,7 @@ def eval_netG(image_path, save_dir, opt, netG):
             real_zero = real_zero.to(opt.device)
             rec_output = netG(real_zero, opt.Noise_Amps, mode="rec")[0]
 
-            real_tensor_to_plot = tensor_to_plot(real_zero)
+            real_tensor_to_plot = tensor_to_plot(real)
             rec_tensor_to_plot = tensor_to_plot(rec_output)
             axes[0].imshow(real_tensor_to_plot)
             axes[1].imshow(rec_tensor_to_plot)
