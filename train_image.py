@@ -193,7 +193,7 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")
+                        fake, _ = G_curr(real_zero, [], mode="vq_rand")
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
@@ -263,7 +263,7 @@ def eval_netG(image_path, save_dir, opt, netG):
                 axes[plot_idx].set_yticks([])
 
             real_zero = real_zero.to(opt.device)
-            rec_output = netG(real_zero, opt.Noise_Amps, mode="rec")[0]
+            rec_output = netG(real_zero, [], mode="rec")[0]
 
             real_tensor_to_plot = tensor_to_plot(real)
             rec_tensor_to_plot = tensor_to_plot(rec_output)
@@ -373,7 +373,6 @@ if __name__ == '__main__':
         logging.info("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
     # Initial config
-    opt.noise_amp_init = opt.noise_amp
     opt.scale_factor_init = opt.scale_factor
 
     # Adjust scales
@@ -392,7 +391,6 @@ if __name__ == '__main__':
     # Initial parameters
     opt.scale_idx = 0
     opt.nfc_prev = 0
-    opt.Noise_Amps = []
 
     # Date
     if os.path.isdir(opt.image_path):
@@ -444,8 +442,6 @@ if __name__ == '__main__':
             netG.init_next_stage()
         netG.load_state_dict(checkpoint['state_dict'])
         opt.scale_idx += 1
-        # NoiseAmp
-        opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
     else:
         opt.resumed_idx = -1
 
