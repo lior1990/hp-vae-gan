@@ -114,6 +114,25 @@ def train(opt, netG):
             real_zero = real
 
         ############################
+        # calculate noise_amp
+        ###########################
+        if iteration == 0:
+            if opt.const_amp:
+                opt.Noise_Amps.append(1)
+            else:
+                with torch.no_grad():
+                    if opt.scale_idx == 0:
+                        opt.noise_amp = 1
+                        opt.Noise_Amps.append(opt.noise_amp)
+                    else:
+                        opt.Noise_Amps.append(0)
+                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+
+                        RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
+                        opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
+                        opt.Noise_Amps[-1] = opt.noise_amp
+
+        ############################
         # (1) Update VAE network
         ###########################
         total_loss = 0
@@ -139,7 +158,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, [], mode="vq_rand")
+            fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -453,6 +472,11 @@ if __name__ == '__main__':
         if opt.scale_idx > 0:
             netG.init_next_stage()
         netG.to(opt.device)
+
+        if opt.scale_idx >= 15:
+            # memory limitations
+            data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
+
         train(opt, netG)
 
         # Increase scale
