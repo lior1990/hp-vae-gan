@@ -222,6 +222,7 @@ def train(opt, netG):
 
     epoch_iterator.close()
 
+    opt.saver.save_checkpoint({'data': opt.Noise_Amps}, 'Noise_Amps.pth')
     # Save data
     opt.saver.save_checkpoint({
         'scale': opt.scale_idx,
