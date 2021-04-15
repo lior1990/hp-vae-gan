@@ -29,6 +29,9 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
+        if opt.scale_idx % opt.increase_num_layer_interval == 0:
+            print(f"Increasing num_layer {opt.num_layer}")
+            opt.num_layer += 1
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
         if opt.vae_levels < opt.scale_idx:
@@ -36,8 +39,11 @@ def train(opt, netG):
                 D_curr.load_state_dict(
                     torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
             else:
-                D_curr.load_state_dict(
-                    torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'])
+                missing_keys, unexpected_keys = D_curr.load_state_dict(
+                    torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'],
+                    strict=False)
+                if unexpected_keys:
+                    raise ValueError(unexpected_keys)
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
@@ -347,6 +353,7 @@ if __name__ == '__main__':
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', action='store_true', default=False, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
+    parser.add_argument('--increase-num-layer-interval', type=int, default=5, help='interval to increase num_layer for D')
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")

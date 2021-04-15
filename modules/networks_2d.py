@@ -226,12 +226,13 @@ class WDiscriminator2D(nn.Module):
 
         self.opt = opt
         N = int(opt.nfc)
-        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn="spectral", act='lrelu')
+        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn="spectral", act='lrelu',
+                                  padding_mode=opt.padding_mode)
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
-            block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn="spectral", act='lrelu')
+            block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn="spectral", act='lrelu', padding_mode=opt.padding_mode)
             self.body.add_module('block%d' % (i), block)
-        self.tail = nn.Conv2d(N, 1, kernel_size=opt.ker_size, padding=1, stride=1)
+        self.tail = nn.Conv2d(N, 1, kernel_size=opt.ker_size, padding=1, stride=1, padding_mode=opt.padding_mode)
 
     def forward(self, x):
         head = self.head(x)
@@ -254,6 +255,7 @@ class GeneratorHPVAEGAN(nn.Module):
         self.opt = opt
         N = int(opt.nfc)
         self.N = N
+        self.num_layer = opt.num_layer
 
         vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
@@ -278,7 +280,7 @@ class GeneratorHPVAEGAN(nn.Module):
             _first_stage.add_module('head',
                                     ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
                                                 stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method))
-            for i in range(self.opt.num_layer):
+            for i in range(self.num_layer):
                 block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method)
                 _first_stage.add_module('block%d' % (i), block)
             _first_stage.add_module('tail',
