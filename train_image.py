@@ -95,7 +95,7 @@ def train(opt, netG):
     }
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
-    iterator = iter(data_loader)
+    iterator = iter(opt.data_loader)
 
     for iteration in epoch_iterator:
         try:
@@ -476,7 +476,7 @@ if __name__ == '__main__':
 
         if opt.scale_idx >= 15:
             # memory limitations
-            data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
+            opt.data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
 
         train(opt, netG)
 
