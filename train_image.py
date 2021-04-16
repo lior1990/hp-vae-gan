@@ -142,7 +142,12 @@ def train(opt, netG):
 
                 content_rec_loss = opt.rec_weight * opt.rec_loss(generated_content, real)
 
-                total_loss += content_loss + texture_loss + content_rec_loss
+                z_content_reconstruction = G_curr.encoder_content(generated_content)
+                z_texture_reconstruction = G_curr.encoder_texture(generated_content)
+                z_content_reconstruction_loss = l1_loss(z_content, z_content_reconstruction)
+                z_texture_reconstruction_loss = l1_loss(z_texture, z_texture_reconstruction)
+
+                total_loss += content_loss + texture_loss + content_rec_loss + z_texture_reconstruction_loss + z_content_reconstruction_loss
         else:
             ############################
             # (2) Update D network: maximize D(x) + D(G(z))
@@ -197,9 +202,11 @@ def train(opt, netG):
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
             if opt.scale_idx == 0:
-                opt.summary.add_scalar('Video/Scale {}/content loss'.format(opt.scale_idx), content_rec_loss.item(), iteration)
-                opt.summary.add_scalar('Video/Scale {}/content loss'.format(opt.scale_idx), content_loss.item(), iteration)
-                opt.summary.add_scalar('Video/Scale {}/texture loss'.format(opt.scale_idx), texture_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/content reconstruction loss'.format(opt.scale_idx), content_rec_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/content distance loss'.format(opt.scale_idx), content_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/texture distance loss'.format(opt.scale_idx), texture_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/z content reconstruction loss'.format(opt.scale_idx), z_content_reconstruction_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/z texture reconstruction loss'.format(opt.scale_idx), z_texture_reconstruction_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
 
             if opt.vae_levels < opt.scale_idx + 1:
@@ -222,8 +229,8 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, generated_content, 'Generated content')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
-                if opt.scale_idx == 0:
-                    opt.summary.visualize_image(opt, iteration, z_content, 'Z content')
+                # if opt.scale_idx == 0:
+                #     opt.summary.visualize_image(opt, iteration, z_content, 'Z content')
 
     epoch_iterator.close()
 

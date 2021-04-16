@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import copy
 import utils
+from modules.munit_networks import StyleEncoder, ContentEncoder, Decoder as MUNITDecoder, MLP
 from vqvae.quantizer import VectorQuantizer
 
 
@@ -266,11 +267,10 @@ class GeneratorHPVAEGAN(nn.Module):
         N = int(opt.nfc)
         self.N = N
 
-        encoder_content_out_dim = opt.nc_im
-        encoder_texture_out_dim = opt.embedding_dim
-        self.encoder_content = Encode2DVQVAE(opt, out_dim=encoder_content_out_dim, num_blocks=opt.enc_blocks)
-        self.encoder_texture = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.decoder = Decoder(opt, encoder_texture_out_dim + encoder_content_out_dim)
+        style_dim = 8
+        self.encoder_content = ContentEncoder(0, opt.enc_blocks, opt.nc_im, opt.embedding_dim, "in", "relu", "reflect")
+        self.encoder_texture = StyleEncoder(0, opt.nc_im, opt.embedding_dim, style_dim, norm='none', activ="relu", pad_type="reflect")
+        self.decoder = MUNITDecoder(0, opt.enc_blocks, opt.embedding_dim, opt.nc_im, "adain", "relu", "reflect")
 
         vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
         self.vqvae_encoder = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
@@ -279,11 +279,33 @@ class GeneratorHPVAEGAN(nn.Module):
 
         self.body = torch.nn.ModuleList([])
 
+        # MLP to generate AdaIN parameters
+        self.mlp = MLP(style_dim, self.get_num_adain_params(self.decoder), 256, opt.enc_blocks, norm='none', activ="relu")
+
+    def assign_adain_params(self, adain_params, model):
+        # assign the adain_params to the AdaIN layers in model
+        for m in model.modules():
+            if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
+                mean = adain_params[:, :m.num_features]
+                std = adain_params[:, m.num_features:2*m.num_features]
+                m.bias = mean.contiguous().view(-1)
+                m.weight = std.contiguous().view(-1)
+                if adain_params.size(1) > 2*m.num_features:
+                    adain_params = adain_params[:, 2*m.num_features:]
+
+    def get_num_adain_params(self, model):
+        # return the number of AdaIN parameters needed by the model
+        num_adain_params = 0
+        for m in model.modules():
+            if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
+                num_adain_params += 2*m.num_features
+        return num_adain_params
+
     def init_next_stage(self):
         if len(self.body) == 0:
             _first_stage = nn.Sequential()
             _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
+                                    ConvBlock2D(self.opt.nc_im + self.opt.embedding_dim, self.N, self.opt.ker_size, self.opt.padd_size,
                                                 stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method))
             for i in range(self.opt.num_layer):
                 block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method)
@@ -301,7 +323,9 @@ class GeneratorHPVAEGAN(nn.Module):
 
         z_content = self.encoder_content(img)
         z_texture = self.encoder_texture(img)
-        content_vqvae_out = torch.tanh(self.decoder(torch.cat([z_content, z_texture], dim=1)))
+        adain_params = self.mlp(z_texture)
+        self.assign_adain_params(adain_params, self.decoder)
+        content_vqvae_out = self.decoder(z_content)
 
         x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode, z_content)
 
@@ -320,16 +344,18 @@ class GeneratorHPVAEGAN(nn.Module):
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
             z_content_up = utils.upscale_2d(z_content, idx + 1, self.opt)
 
-            if idx < n_interpolations:
-                interpolation_val = (n_interpolations - idx) * 0.1
-                x_prev_out_up = x_prev_out_up * (1-interpolation_val) + z_content_up * interpolation_val
+            # if idx < n_interpolations:
+            #     interpolation_val = (n_interpolations - idx) * 0.1
+            #     x_prev_out_up = x_prev_out_up * (1-interpolation_val) + z_content_up * interpolation_val
+
+            x_prev_out_up_concatenated = torch.cat([x_prev_out_up, z_content_up], dim=1)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
-                noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
+                noise = utils.generate_noise(ref=x_prev_out_up_concatenated)
+                x_prev = block(x_prev_out_up_concatenated + noise * noise_amp[idx + 1])
             else:
-                x_prev = block(x_prev_out_up)
+                x_prev = block(x_prev_out_up_concatenated)
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
             z_content = z_content_up
