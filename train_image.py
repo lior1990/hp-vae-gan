@@ -81,7 +81,7 @@ def train(opt, netG):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    if opt.device == 'cuda' and torch.cuda.device_count() > 1:
         G_curr = torch.nn.DataParallel(netG)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
@@ -102,7 +102,7 @@ def train(opt, netG):
     l1_loss = torch.nn.L1Loss()
     l2_loss = torch.nn.MSELoss()
 
-    iterator = iter(data_loader)
+    iterator = iter(opt.data_loader)
 
     for iteration in epoch_iterator:
         try:
@@ -245,7 +245,7 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
-            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
+            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' and torch.cuda.device_count() > 1 else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
@@ -264,6 +264,11 @@ def eval_netG(image_path, save_dir, opt, netG):
     dataset = MultipleImageDataset(opt)
     test_data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
 
+    fakes_folder = os.path.join(save_dir, "fakes")
+    reals_folder = os.path.join(save_dir, "reals")
+    os.makedirs(fakes_folder, exist_ok=True)
+    os.makedirs(reals_folder, exist_ok=True)
+
     netG.eval()
     with torch.no_grad():
         def norm(t):
@@ -273,9 +278,9 @@ def eval_netG(image_path, save_dir, opt, netG):
 
             norm_ip(t, float(t.min()), float(t.max()))
 
-        def plot_tensor(t, ax):
+        def tensor_to_plot(t):
             norm(t)
-            ax.imshow(t.squeeze().cpu().permute((1, 2, 0)))
+            return t.squeeze().cpu().permute((1, 2, 0)).numpy()
 
         for idx, (img_zero, img) in enumerate(test_data_loader):
             fig, axes = plt.subplots(1, 2, figsize=(20, 5))
@@ -287,10 +292,14 @@ def eval_netG(image_path, save_dir, opt, netG):
             img_zero = img_zero.to(opt.device)
             rec_output = netG(img_zero, opt.Noise_Amps, mode="rec")[0]
 
-            plot_tensor(img if opt.scale_idx > 0 else img_zero, axes[0])
-            plot_tensor(rec_output, axes[1])
+            real_tensor_to_plot = tensor_to_plot(img if opt.scale_idx > 0 else img_zero)
+            rec_tensor_to_plot = tensor_to_plot(rec_output)
+            axes[0].imshow(real_tensor_to_plot)
+            axes[1].imshow(rec_tensor_to_plot)
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
+            plt.imsave(os.path.join(reals_folder, f"real_{idx}.png"), real_tensor_to_plot)
+            plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
 
     netG.train()
     opt.image_path = original_image_path
@@ -471,6 +480,11 @@ if __name__ == '__main__':
         if opt.scale_idx > 0:
             netG.init_next_stage()
         netG.to(opt.device)
+
+        if opt.scale_idx >= 15:
+            # memory limitations
+            opt.data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
+
         train(opt, netG)
 
         # Increase scale
