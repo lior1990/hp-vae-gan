@@ -145,10 +145,6 @@ def init(opt):
         raise NotImplementedError
 
     opt.n_images = dataset.num_of_images
-    initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
-    initial_size = [int(initial_size * opt.ar), initial_size]
-    opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
-    noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
 
     dataset_size = len(dataset)
     # Current networks
@@ -198,10 +194,10 @@ def eval_netG(image_path, save_dir, opt, netG):
                 axes[plot_idx].set_xticks([])
                 axes[plot_idx].set_yticks([])
 
-            img_zero[0] = img_zero[0].to(opt.device)
-            rec_output = netG(img_zero[0], opt.Noise_Amps, mode="rec")[0]
+            img_zero = img_zero.to(opt.device)
+            rec_output = netG(img_zero, opt.Noise_Amps, mode="rec")[0]
 
-            plot_tensor(img[0], axes[0])
+            plot_tensor(img, axes[0])
             plot_tensor(rec_output, axes[1])
             fig.savefig(os.path.join(save_dir, f"{idx}.png"))  # save the figure to file
             plt.close(fig)
