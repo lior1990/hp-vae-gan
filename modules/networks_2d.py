@@ -348,13 +348,14 @@ class GeneratorHPVAEGAN(nn.Module):
             #     interpolation_val = (n_interpolations - idx) * 0.1
             #     x_prev_out_up = x_prev_out_up * (1-interpolation_val) + z_content_up * interpolation_val
 
-            x_prev_out_up_concatenated = torch.cat([x_prev_out_up, z_content_up], dim=1)
-
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
+                empty_content = torch.zeros_like(z_content_up)
+                x_prev_out_up_concatenated = torch.cat([x_prev_out_up, empty_content], dim=1)
                 noise = utils.generate_noise(ref=x_prev_out_up_concatenated)
                 x_prev = block(x_prev_out_up_concatenated + noise * noise_amp[idx + 1])
             else:
+                x_prev_out_up_concatenated = torch.cat([x_prev_out_up, z_content_up], dim=1)
                 x_prev = block(x_prev_out_up_concatenated)
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
