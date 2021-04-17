@@ -302,19 +302,26 @@ class GeneratorHPVAEGAN(nn.Module):
         return num_adain_params
 
     def init_next_stage(self):
-        if len(self.body) == 0:
+        def init_stage(input_dim):
             _first_stage = nn.Sequential()
             _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im + self.opt.embedding_dim, self.N, self.opt.ker_size, self.opt.padd_size,
+                                    ConvBlock2D(input_dim, self.N, self.opt.ker_size, self.opt.padd_size,
                                                 stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method))
             for i in range(self.opt.num_layer):
                 block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method)
                 _first_stage.add_module('block%d' % (i), block)
             _first_stage.add_module('tail',
                                     nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2, padding_mode=self.opt.padding_mode))
-            self.body.append(_first_stage)
+            return _first_stage
+
+        if len(self.body) == 0:
+            self.body.append(init_stage(self.opt.nc_im + self.opt.embedding_dim))
         else:
-            self.body.append(copy.deepcopy(self.body[-1]))
+            if self.opt.vae_levels == self.opt.scale_idx:
+                print("init stage from 3 channels input only")
+                self.body.append(init_stage(self.opt.nc_im))
+            else:
+                self.body.append(copy.deepcopy(self.body[-1]))
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand'):
         z_e = self.encode(self.vqvae_encoder, img)
@@ -350,12 +357,19 @@ class GeneratorHPVAEGAN(nn.Module):
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == 'rand':
-                empty_content = torch.zeros_like(z_content_up)
-                x_prev_out_up_concatenated = torch.cat([x_prev_out_up, empty_content], dim=1)
+                if self.opt.vae_levels <= idx + 1:
+                    x_prev_out_up_concatenated = x_prev_out_up
+                else:
+                    empty_content = torch.zeros_like(z_content_up)
+                    x_prev_out_up_concatenated = torch.cat([x_prev_out_up, empty_content], dim=1)
+
                 noise = utils.generate_noise(ref=x_prev_out_up_concatenated)
                 x_prev = block(x_prev_out_up_concatenated + noise * noise_amp[idx + 1])
             else:
-                x_prev_out_up_concatenated = torch.cat([x_prev_out_up, z_content_up], dim=1)
+                if self.opt.vae_levels <= idx + 1:
+                    x_prev_out_up_concatenated = x_prev_out_up
+                else:
+                    x_prev_out_up_concatenated = torch.cat([x_prev_out_up, z_content_up], dim=1)
                 x_prev = block(x_prev_out_up_concatenated)
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
