@@ -79,6 +79,7 @@ def parse_opt():
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
+    parser.add_argument('--n_interpolations', type=int, default=3)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
