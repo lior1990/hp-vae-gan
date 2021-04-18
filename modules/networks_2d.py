@@ -58,7 +58,7 @@ class ConvBlock2D(nn.Sequential):
         self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
                                           stride=stride, padding=padding, padding_mode=padding_mode))
         if bn == "batch":
-            self.add_module('norm', nn.BatchNorm2d(out_channel))
+            self.add_module('norm', nn.BatchNorm2d(out_channel, track_running_stats=False))
         elif bn == "instance":
             self.add_module('norm', nn.InstanceNorm2d(out_channel))
         elif bn in [False, "none", None]:
@@ -83,7 +83,7 @@ class ConvBlock2DSN(nn.Sequential):
         elif bn == "batch":
             self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
                                                                      stride=stride, padding=padding, padding_mode=padding_mode))
-            self.add_module("norm", nn.BatchNorm2d(out_channel))
+            self.add_module("norm", nn.BatchNorm2d(out_channel, track_running_stats=False))
         else:
             raise NotImplementedError
 

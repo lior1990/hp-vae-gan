@@ -269,7 +269,7 @@ def eval_netG(image_path, save_dir, opt, netG):
     os.makedirs(fakes_folder, exist_ok=True)
     os.makedirs(reals_folder, exist_ok=True)
 
-    netG.eval()
+    #netG.eval()
     with torch.no_grad():
         def norm(t):
             def norm_ip(img, min, max):
