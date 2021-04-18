@@ -160,8 +160,8 @@ def init(opt):
     opt.scale_idx = checkpoint['scale']
     opt.resumed_idx = checkpoint['scale']
     opt.resume_dir = os.sep.join(opt.netG.split(os.sep)[:-1])
-    for _ in range(opt.scale_idx):
-        netG.init_next_stage()
+    for i in range(opt.scale_idx):
+        netG.init_next_stage(i)
 
     netG.load_state_dict(checkpoint["state_dict"])
     # NoiseAmp

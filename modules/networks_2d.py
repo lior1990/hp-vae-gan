@@ -301,7 +301,10 @@ class GeneratorHPVAEGAN(nn.Module):
                 num_adain_params += 2*m.num_features
         return num_adain_params
 
-    def init_next_stage(self):
+    def init_next_stage(self, scale=None):
+        if scale is None:
+            scale = self.opt.scale_idx
+
         def init_stage(input_dim):
             _first_stage = nn.Sequential()
             _first_stage.add_module('head',
@@ -317,7 +320,7 @@ class GeneratorHPVAEGAN(nn.Module):
         if len(self.body) == 0:
             self.body.append(init_stage(self.opt.nc_im + self.opt.embedding_dim))
         else:
-            if self.opt.vae_levels == self.opt.scale_idx:
+            if self.opt.vae_levels == scale:
                 print("init stage from 3 channels input only")
                 self.body.append(init_stage(self.opt.nc_im))
             else:
