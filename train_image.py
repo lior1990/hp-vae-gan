@@ -102,6 +102,7 @@ def train(opt, netG):
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
     iterator = iter(opt.data_loader)
+    reference_iterator = iter(ref_data_loader)
 
     for iteration in epoch_iterator:
         try:
@@ -118,6 +119,20 @@ def train(opt, netG):
             real = data
             real = real.to(opt.device)
             real_zero = real
+
+        try:
+            ref_data = next(reference_iterator)
+        except StopIteration:
+            reference_iterator = iter(ref_data_loader)
+            ref_data = next(reference_iterator)
+
+        if opt.scale_idx > 0:
+            ref_real, ref_real_zero = ref_data
+            ref_real_zero = ref_real_zero.to(opt.device)
+        else:
+            ref_real = ref_data
+            ref_real_zero = ref_data
+            ref_real_zero = ref_real_zero.to(opt.device)
 
         ############################
         # calculate noise_amp
@@ -164,7 +179,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")
+            fake, _ = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -218,13 +233,14 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="vq_rand")
+                        fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec_noise")
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
+                opt.summary.visualize_image(opt, iteration, ref_real, 'Fake var')
 
     epoch_iterator.close()
 
@@ -357,6 +373,7 @@ if __name__ == '__main__':
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
+    parser.add_argument('--ref-image-path', required=False, help="image path", default="data/imgs/mountains")
     parser.add_argument('--hflip', action='store_true', default=False, help='horizontal flip')
     parser.add_argument('--img-size', type=int, default=256)
     parser.add_argument('--stop-scale-time', type=int, default=-1)
@@ -434,6 +451,13 @@ if __name__ == '__main__':
                              drop_last=True,
                              batch_size=opt.batch_size,
                              num_workers=0)
+
+    ref_dataset = MultipleImageDataset(opt, load_ref_image=True)
+    ref_data_loader = DataLoader(ref_dataset,
+                                 shuffle=False,
+                                 drop_last=False,
+                                 batch_size=opt.batch_size,
+                                 num_workers=0)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale

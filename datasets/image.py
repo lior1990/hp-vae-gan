@@ -101,16 +101,18 @@ class SingleImageDataset(ImageDataset):
 
 
 class MultipleImageDataset(ImageDataset):
-    def __init__(self, opt):
+    def __init__(self, opt, load_ref_image=False):
         super(MultipleImageDataset, self).__init__(opt)
 
-        if not (os.path.exists(opt.image_path) and os.path.isdir(opt.image_path)):
+        image_path = opt.ref_image_path if load_ref_image else opt.image_path
+
+        if not (os.path.exists(image_path) and os.path.isdir(image_path)):
             logging.error("invalid path")
             exit(0)
 
         self.images = []
-        for img_path in os.listdir(opt.image_path):
-            image_full_scale = imageio.imread(os.path.join(opt.image_path, img_path))[:, :, :3]
+        for img_path in os.listdir(image_path):
+            image_full_scale = imageio.imread(os.path.join(image_path, img_path))[:, :, :3]
             self.images.append(image_full_scale)
 
         self.num_of_images = len(self.images)
