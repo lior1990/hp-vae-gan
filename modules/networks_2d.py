@@ -155,7 +155,7 @@ class Encode2DVAE(nn.Module):
             assert type(out_dim) is int
             output_dim = out_dim
 
-        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, num_blocks=num_blocks)
+        self.features = FeatureExtractor(opt.nc_im, opt.nfc, opt.ker_size, opt.ker_size // 2, 1, opt.padding_mode, opt.encoder_normalization_method, num_blocks=num_blocks, pooling=opt.pooling)
         self.mu = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
         self.logvar = ConvBlock2D(opt.nfc, output_dim, opt.ker_size, opt.ker_size // 2, 1, bn=False, act=None)
 
@@ -257,13 +257,11 @@ class GeneratorHPVAEGAN(nn.Module):
         self.N = N
         self.num_layer = opt.num_layer
 
-        vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
-        self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = VectorQuantizer(opt.n_embeddings, vqvae_embedding_dim, opt.vqvae_beta)
+        self.vae_encode = Encode2DVAE(opt, out_dim=opt.latent_dim, num_blocks=opt.enc_blocks)
         self.decoder = nn.Sequential()
 
         # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
+        self.decoder.add_module('head', ConvBlock2D(opt.latent_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
         for i in range(opt.enc_blocks-1):
             if opt.pooling:
                 block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, bn=opt.decoder_normalization_method)
@@ -290,13 +288,20 @@ class GeneratorHPVAEGAN(nn.Module):
             self.body.append(copy.deepcopy(self.body[-1]))
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand'):
-        z_e = self.encode(img)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
-        vqvae_out = torch.tanh(self.decoder(z_q))
+        if noise_init is None:
+            mu, logvar = self.vae_encode(img)
+            z_vae = reparameterize(mu, logvar, self.training)
+        else:
+            z_vae = noise_init
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
+        vae_out = torch.tanh(self.decoder(z_vae))
 
-        return x_prev_out, embedding_loss
+        x_prev_out = self.refinement_layers(0, vae_out, noise_amp, mode)
+
+        if noise_init is None:
+            return x_prev_out, vae_out, (mu, logvar)
+        else:
+            return x_prev_out, vae_out
 
     def forward_w_interpolation(self, img_all_scales, interpolation_indices):
         if interpolation_indices is None:
