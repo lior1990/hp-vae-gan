@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import copy
 import utils
+from vqvae.new_quantizer import Codebook
 from vqvae.quantizer import VectorQuantizer
 
 
@@ -259,7 +260,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = VectorQuantizer(opt.n_embeddings, vqvae_embedding_dim, opt.vqvae_beta)
+        self.vector_quantization = Codebook(opt.n_embeddings, vqvae_embedding_dim)
         self.decoder = nn.Sequential()
 
         # Normal Decoder
@@ -291,7 +292,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
     def forward(self, img, noise_amp, noise_init=None, mode='rand'):
         z_e = self.encode(img)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e, mode)
+        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
         x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
