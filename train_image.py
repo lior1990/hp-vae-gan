@@ -240,7 +240,7 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
-                opt.summary.visualize_image(opt, iteration, ref_real, 'Fake var')
+                opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
 
     epoch_iterator.close()
 
