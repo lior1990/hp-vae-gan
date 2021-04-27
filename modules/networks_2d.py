@@ -66,6 +66,8 @@ class ConvBlock2D(nn.Sequential):
                 self.add_module('norm', nn.BatchNorm2d(out_channel))
             elif bn == "instance":
                 self.add_module('norm', nn.InstanceNorm2d(out_channel))
+            elif bn == "group":
+                self.add_module('norm', nn.GroupNorm(32, out_channel))
             elif bn in [False, "none", None]:
                 pass
             else:
@@ -85,6 +87,10 @@ class ConvBlock2DSN(nn.Sequential):
             self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
                                                                      stride=stride, padding=padding, padding_mode=padding_mode))
             self.add_module("norm", nn.InstanceNorm2d(out_channel))
+        elif bn == "group":
+            self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
+                                                                     stride=stride, padding=padding, padding_mode=padding_mode))
+            self.add_module('norm', nn.GroupNorm(32, out_channel))
         elif bn == "batch":
             self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size,
                                                                      stride=stride, padding=padding, padding_mode=padding_mode))
