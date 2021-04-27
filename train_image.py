@@ -138,8 +138,8 @@ def train(opt, netG):
         # calculate noise_amp
         ###########################
         if iteration == 0:
-            if opt.const_amp:
-                opt.Noise_Amps.append(1)
+            if opt.const_amp > 0:
+                opt.Noise_Amps.append(opt.const_amp)
             else:
                 with torch.no_grad():
                     if opt.scale_idx == 0:
@@ -233,7 +233,7 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        fake, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec_noise")
+                        fake, _ = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
@@ -367,7 +367,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
-    parser.add_argument('--const-amp', action='store_true', default=False, help='constant noise amplitude')
+    parser.add_argument('--const-amp', type=float, default=0, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
     parser.add_argument('--increase-num-layer-interval', type=int, default=5, help='interval to increase num_layer for D')
 
