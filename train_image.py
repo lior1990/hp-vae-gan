@@ -454,7 +454,7 @@ if __name__ == '__main__':
 
     ref_dataset = MultipleImageDataset(opt, load_ref_image=True)
     ref_data_loader = DataLoader(ref_dataset,
-                                 shuffle=False,
+                                 shuffle=True,
                                  drop_last=False,
                                  batch_size=opt.batch_size,
                                  num_workers=0)
