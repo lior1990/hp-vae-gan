@@ -147,7 +147,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction, _ = G_curr(real_zero, opt.Noise_Amps, mode="rec")
+                        z_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec")[0]
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -158,7 +158,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_loss = G_curr(real_zero, [], mode="rec")
+        generated, embedding_loss, encoding_indices = G_curr(real_zero, [], mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -179,7 +179,7 @@ def train(opt, netG):
 
             # train with fake
             #################
-            fake, _ = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
+            fake = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)[0]
 
             # Train 3D Discriminator
             output = D_curr(fake.detach())
@@ -233,13 +233,15 @@ def train(opt, netG):
                 with torch.no_grad():
                     fake_var = []
                     for _ in range(3):
-                        fake, _ = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
+                        fake, _, ref_encoding_indices = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
+                opt.summary.visualize_image(opt, iteration, encoding_indices, 'Generated Indices', dim=3)
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
+                opt.summary.visualize_image(opt, iteration, ref_encoding_indices, 'Ref Indices', dim=3)
                 opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
 
     epoch_iterator.close()

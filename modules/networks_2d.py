@@ -299,12 +299,12 @@ class GeneratorHPVAEGAN(nn.Module):
     def forward(self, img, noise_amp, mode='rand', reference_img=None):
         img_to_encode = img if reference_img is None else reference_img
         z_e = self.encode(img_to_encode)
-        embedding_loss, z_q, _, _, _ = self.vector_quantization(z_e)
+        embedding_loss, z_q, _, _, encoding_indices = self.vector_quantization(z_e)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
         x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
-        return x_prev_out, embedding_loss
+        return x_prev_out, embedding_loss, encoding_indices
 
     def forward_w_interpolation(self, img_all_scales, interpolation_indices):
         if interpolation_indices is None:
