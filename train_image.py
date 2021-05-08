@@ -193,7 +193,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec")[0]
+                        z_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec", spade_img=real)[0]
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
