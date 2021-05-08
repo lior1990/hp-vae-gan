@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import copy
 import utils
+from modules.spade_block import SPADEResnetBlock
 from vqvae.new_quantizer import Codebook
 from vqvae.quantizer import VectorQuantizer
 
@@ -255,6 +256,14 @@ class UpsampleConvBlock2D(nn.Sequential):
         self.add_module("conv", ConvBlock2D(in_channel, out_channel, ker_size, padding, stride,bn=bn, act=act))
 
 
+class SPADESequential(nn.Sequential):
+    def forward(self, tup):
+        x, source_img = tup
+        for module in self:
+            x = module((x, source_img))
+        return x
+
+
 class GeneratorHPVAEGAN(nn.Module):
     def __init__(self, opt):
         super(GeneratorHPVAEGAN, self).__init__()
@@ -282,27 +291,25 @@ class GeneratorHPVAEGAN(nn.Module):
         self.body = torch.nn.ModuleList([])
 
     def init_next_stage(self):
-        if len(self.body) == 0:
-            _first_stage = nn.Sequential()
-            _first_stage.add_module('head',
-                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
-                                                stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method))
-            for i in range(self.num_layer):
-                block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1, padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method)
-                _first_stage.add_module('block%d' % (i), block)
-            _first_stage.add_module('tail',
-                                    nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2, padding_mode=self.opt.padding_mode))
-            self.body.append(_first_stage)
-        else:
-            self.body.append(copy.deepcopy(self.body[-1]))
+        def create_spade_seq():
+            _stage = SPADESequential()
 
-    def forward(self, img, noise_amp, mode='rand', reference_img=None):
+            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
+            for i in range(self.opt.num_layer):
+                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True)
+                _stage.add_module('block%d' % (i), block)
+            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
+            return _stage
+
+        self.body.append(create_spade_seq())
+
+    def forward(self, img, noise_amp, mode='rand', reference_img=None, spade_img=None):
         img_to_encode = img if reference_img is None else reference_img
         z_e = self.encode(img_to_encode)
         embedding_loss, z_q, _, _, encoding_indices = self.vector_quantization(z_e)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
+        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode, spade_img)
 
         return x_prev_out, embedding_loss, encoding_indices
 
@@ -354,7 +361,7 @@ class GeneratorHPVAEGAN(nn.Module):
         z_e = torch.cat([z_e, positional_encoding.repeat(1, self.opt.positional_encoding_weight, 1, 1)], dim=1)
         return z_e
 
-    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
+    def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, spade_img):
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
@@ -362,9 +369,9 @@ class GeneratorHPVAEGAN(nn.Module):
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode in ["rec_noise", "vq_rand"]:
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
+                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], spade_img))
             else:
-                x_prev = block(x_prev_out_up)
+                x_prev = block((x_prev_out_up, spade_img))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
