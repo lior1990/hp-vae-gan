@@ -371,6 +371,84 @@ class GeneratorHPVAEGAN(nn.Module):
         return x_prev_out
 
 
+class MultiScaleDiscriminator(nn.Module):
+    def __init__(self, n_scales, scale_factor=2, base_channels=128, extra_conv_layers=0):
+        super(MultiScaleDiscriminator, self).__init__()
+        self.base_channels = base_channels
+        self.scale_factor = scale_factor
+        self.extra_conv_layers = extra_conv_layers
+
+        self.max_n_scales = n_scales
+        # Prepare a list of all the networks for all the wanted scales
+        self.nets = nn.ModuleList()
+
+        # Create a network for each scale
+        for _ in range(self.max_n_scales):
+            self.nets.append(self.make_net())
+
+        self.scales_weight = [1 / self.max_n_scales for _ in range(self.max_n_scales)]
+
+    def make_net(self):
+        base_channels = self.base_channels
+        net = []
+
+        # Entry block
+        net += [nn.utils.spectral_norm(nn.Conv2d(3, base_channels, kernel_size=3, stride=1)),
+                nn.BatchNorm2d(base_channels),
+                nn.LeakyReLU(0.2, True)]
+
+        # Downscaling blocks
+        # A sequence of strided conv-blocks. Image dims shrink by 2, channels dim expands by 2 at each block
+        net += [nn.utils.spectral_norm(nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2)),
+                nn.BatchNorm2d(base_channels * 2),
+                nn.LeakyReLU(0.2, True)]
+
+        # Regular conv-block
+        net += [nn.utils.spectral_norm(nn.Conv2d(in_channels=base_channels * 2,
+                                                 out_channels=base_channels * 2,
+                                                 kernel_size=3,
+                                                 bias=True)),
+                nn.BatchNorm2d(base_channels * 2),
+                nn.LeakyReLU(0.2, True)]
+
+        # Additional 1x1 conv-blocks
+        for _ in range(self.extra_conv_layers):
+            net += [nn.utils.spectral_norm(nn.Conv2d(in_channels=base_channels * 2,
+                                                     out_channels=base_channels * 2,
+                                                     kernel_size=3,
+                                                     bias=True)),
+                    nn.BatchNorm2d(base_channels * 2),
+                    nn.LeakyReLU(0.2, True)]
+
+        # Final conv-block
+        # Ends with a Sigmoid to get a range of 0-1
+        net += nn.Sequential(nn.utils.spectral_norm(nn.Conv2d(base_channels * 2, 1, kernel_size=1)),
+                             nn.Sigmoid())
+
+        # Make it a valid layers sequence and return
+        return nn.Sequential(*net)
+
+    def forward(self, input_tensor):
+        scale_weights = self.scales_weight  # todo: set this as parameter and make it dynamic
+        aggregated_result_maps_from_all_scales = self.nets[0](input_tensor) * scale_weights[0]
+        map_size = aggregated_result_maps_from_all_scales.shape[2:]
+
+        # Run all nets over all scales and aggregate the interpolated results
+        size_delta = 10
+        h, w = input_tensor.shape[-2:]
+        for net, scale_weight, i in zip(self.nets[1:], scale_weights[1:], range(1, len(scale_weights))):
+            h -= size_delta
+            w -= size_delta
+            downscaled_image = nn.functional.interpolate(input_tensor, size=(h, w), mode='bilinear')
+            result_map_for_current_scale = net(downscaled_image)
+            upscaled_result_map_for_current_scale = nn.functional.interpolate(result_map_for_current_scale,
+                                                                              size=map_size,
+                                                                              mode='bilinear')
+            aggregated_result_maps_from_all_scales += upscaled_result_map_for_current_scale * scale_weight
+
+        return aggregated_result_maps_from_all_scales
+
+
 class GeneratorVAE_nb(nn.Module):
     def __init__(self, opt):
         super(GeneratorVAE_nb, self).__init__()
