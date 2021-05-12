@@ -193,7 +193,7 @@ def train(opt, netG):
                         opt.Noise_Amps.append(opt.noise_amp)
                     else:
                         opt.Noise_Amps.append(0)
-                        z_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec", spade_img=real)[0]
+                        z_reconstruction = G_curr(real_zero, opt.Noise_Amps, mode="rec")[0]
 
                         RMSE = torch.sqrt(F.mse_loss(real, z_reconstruction))
                         opt.noise_amp = opt.noise_amp_init * RMSE.item() / opt.batch_size
@@ -391,7 +391,7 @@ def eval_netG(image_path, save_dir, opt, netG):
 
             real_zero = real_zero.to(opt.device)
             real = real.to(opt.device)
-            rec_output = netG(real_zero, opt.Noise_Amps, mode="rec", spade_img=real)[0]
+            rec_output = netG(real_zero, opt.Noise_Amps, mode="rec")[0]
 
             real_tensor_to_plot = tensor_to_plot(real)
             rec_tensor_to_plot = tensor_to_plot(rec_output)
