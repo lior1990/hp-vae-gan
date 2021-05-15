@@ -97,7 +97,7 @@ class SPADE(nn.Module):
         normalized = self.param_free_norm(x)
 
         # Part 2. produce scaling and bias conditioned on semantic map
-        source_img = F.interpolate(source_img.unsqueeze(dim=1).type(torch.FloatTensor), size=x.size()[-2:], mode='nearest')
+        source_img = F.interpolate(source_img.unsqueeze(dim=1).type(torch.FloatTensor).to(source_img.device), size=x.size()[-2:], mode='nearest')
         actv = self.mlp_shared(source_img)
         gamma = self.mlp_gamma(actv)
         beta = self.mlp_beta(actv)
