@@ -83,7 +83,8 @@ def train(opt, netG):
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
 
     # Parallel
-    if opt.device == 'cuda':
+    is_parallel = torch.cuda.device_count() > 1
+    if is_parallel:
         G_curr = torch.nn.DataParallel(netG)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
@@ -232,10 +233,12 @@ def train(opt, netG):
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
                     fake_var = []
+                    G_curr.eval()
                     for _ in range(3):
                         fake, _, ref_encoding_indices = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
+                    G_curr.train()
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
@@ -256,7 +259,7 @@ def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
-            'state_dict': D_curr.module.state_dict() if opt.device == 'cuda' else D_curr.state_dict(),
+            'state_dict': D_curr.module.state_dict() if is_parallel else D_curr.state_dict(),
             'optimizer': optimizerD.state_dict(),
         }, 'netD_{}.pth'.format(opt.scale_idx))
 
@@ -395,6 +398,7 @@ if __name__ == '__main__':
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
+    parser.add_argument('--reduce-batch-interval', type=int, default=4)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -502,14 +506,18 @@ if __name__ == '__main__':
     else:
         opt.resumed_idx = -1
 
+    dynamic_batch_size = opt.batch_size
+
     while opt.scale_idx < opt.stop_scale + 1:
         if opt.scale_idx > 0:
             netG.init_next_stage()
         netG.to(opt.device)
 
-        if opt.scale_idx >= 15:
+        if opt.scale_idx > 0 and opt.scale_idx % opt.reduce_batch_interval == 0 and opt.batch_size > 1:
             # memory limitations
-            opt.data_loader = DataLoader(dataset, batch_size=1, num_workers=0)
+            dynamic_batch_size = dynamic_batch_size // 2
+            opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
+            ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
 
         train(opt, netG)
 
