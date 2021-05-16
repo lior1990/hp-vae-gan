@@ -29,9 +29,6 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
-        if opt.scale_idx % opt.increase_num_layer_interval == 0:
-            print(f"Increasing num_layer {opt.num_layer}")
-            opt.num_layer += 1
         D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
 
         if opt.vae_levels < opt.scale_idx:
@@ -85,6 +82,7 @@ def train(opt, netG):
     # Parallel
     is_parallel = torch.cuda.device_count() > 1
     if is_parallel:
+        print("Working with data parallel")
         G_curr = torch.nn.DataParallel(netG)
         if opt.vae_levels < opt.scale_idx + 1:
             D_curr = torch.nn.DataParallel(D_curr)
@@ -515,6 +513,7 @@ if __name__ == '__main__':
 
         if opt.scale_idx > 0 and opt.scale_idx % opt.reduce_batch_interval == 0 and opt.batch_size > 1:
             # memory limitations
+            print(f"Reducing batch size from {dynamic_batch_size} to {dynamic_batch_size//2}")
             dynamic_batch_size = dynamic_batch_size // 2
             opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
             ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
