@@ -177,8 +177,8 @@ def train(opt, netG):
 
             # Train 3D Discriminator
             D_curr.zero_grad()
-            output = D_curr(real)
-            errD_real = -output.mean()
+            real_discrimination_map = D_curr(real)
+            errD_real = -real_discrimination_map.mean()
 
             # train with fake
             #################
@@ -197,12 +197,12 @@ def train(opt, netG):
             # (3) Update G network: maximize D(G(z))
             ###########################
             errG_total = 0
-            rec_loss = opt.rec_loss(generated, real)
+            rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
-            output = D_curr(fake)
-            errG = -output.mean() * opt.disc_loss_weight
+            fake_discrimination_map = D_curr(fake)
+            errG = -fake_discrimination_map.mean() * opt.disc_loss_weight
             errG_total += errG
 
             total_loss += errG_total
@@ -258,6 +258,10 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
                 opt.summary.visualize_image(opt, iteration, ref_encoding_indices, 'Ref Indices', dim=3)
                 opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
+                if opt.vae_levels < opt.scale_idx + 1:
+                    opt.summary.visualize_image(opt, iteration, fake, 'Fake')
+                    opt.summary.visualize_image(opt, iteration, real_discrimination_map.squeeze(dim=1), 'Real D map', dim=3)
+                    opt.summary.visualize_image(opt, iteration, fake_discrimination_map.squeeze(dim=1), 'Fake D map', dim=3)
 
     epoch_iterator.close()
 
