@@ -1,5 +1,7 @@
 import matplotlib
 
+from utils.ema import ExponentialMovingAverage
+
 matplotlib.use("Agg")
 
 import argparse
@@ -88,6 +90,8 @@ def train(opt, netG):
             D_curr = torch.nn.DataParallel(D_curr)
     else:
         G_curr = netG
+
+    g_ema = ExponentialMovingAverage(G_curr.parameters(), decay=0.995)
 
     progressbar_args = {
         "iterable": range(opt.niter),
@@ -207,6 +211,7 @@ def train(opt, netG):
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(G_curr.parameters(), opt.grad_clip)
         optimizerG.step()
+        g_ema.update(G_curr.parameters())
 
         # Update progress bar
         epoch_iterator.set_description('Scale [{}/{}], Iteration [{}/{}]'.format(
@@ -231,12 +236,21 @@ def train(opt, netG):
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
                     fake_var = []
+
+                    # First save original parameters before replacing with EMA version
+                    g_ema.store(G_curr.parameters())
+                    # Copy EMA parameters to model
+                    g_ema.copy_to(G_curr.parameters())
+
                     G_curr.eval()
                     for _ in range(3):
                         fake, _, ref_encoding_indices = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
                     G_curr.train()
+
+                    # Restore original parameters to resume training later
+                    g_ema.restore(G_curr.parameters())
 
                 opt.summary.visualize_image(opt, iteration, real, 'Real')
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
@@ -263,10 +277,10 @@ def train(opt, netG):
 
     samples_folder = os.path.join(opt.saver.experiment_dir, f"generated_images_{opt.scale_idx}")
     os.makedirs(samples_folder, exist_ok=True)
-    eval_netG(opt.eval_dataset, samples_folder, opt, netG)
+    eval_netG(opt.eval_dataset, samples_folder, opt, netG, g_ema)
 
 
-def eval_netG(image_path, save_dir, opt, netG):
+def eval_netG(image_path, save_dir, opt, netG, g_ema):
     import matplotlib.pyplot as plt
 
     original_image_path = opt.image_path
@@ -280,6 +294,11 @@ def eval_netG(image_path, save_dir, opt, netG):
     reals_folder = os.path.join(save_dir, "reals")
     os.makedirs(fakes_folder, exist_ok=True)
     os.makedirs(reals_folder, exist_ok=True)
+
+    # First save original parameters before replacing with EMA version
+    g_ema.store(netG.parameters())
+    # Copy EMA parameters to model
+    g_ema.copy_to(netG.parameters())
 
     netG.eval()
     with torch.no_grad():
@@ -320,6 +339,10 @@ def eval_netG(image_path, save_dir, opt, netG):
             plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
 
     netG.train()
+
+    # Restore original parameters to resume training later
+    g_ema.restore(netG.parameters())
+
     opt.image_path = original_image_path
     opt.data_rep = original_rep
 
