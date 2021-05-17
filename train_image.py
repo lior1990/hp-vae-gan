@@ -419,7 +419,7 @@ if __name__ == '__main__':
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
-    parser.add_argument('--reduce-batch-interval', type=int, default=4)
+    parser.add_argument('--reduce-batch-interval', type=int, default=15)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
