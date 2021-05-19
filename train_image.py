@@ -1,6 +1,7 @@
 import matplotlib
 
 from utils.ema import ExponentialMovingAverage
+from modules.networks_2d import MultiScaleDiscriminator
 
 matplotlib.use("Agg")
 
@@ -31,18 +32,20 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
-        D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
-
-        if opt.vae_levels < opt.scale_idx:
-            if (opt.netG != '') and opt.resumed_idx != -1:
-                D_curr.load_state_dict(
-                    torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
-            else:
-                missing_keys, unexpected_keys = D_curr.load_state_dict(
-                    torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'],
-                    strict=False)
-                if unexpected_keys:
-                    raise ValueError(unexpected_keys)
+        if opt.scale_idx > opt.ingan_disc_start_scale:
+            D_curr = MultiScaleDiscriminator(opt.ingan_disc_n_scales)
+        else:
+            D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
+            if opt.vae_levels < opt.scale_idx:
+                if (opt.netG != '') and opt.resumed_idx != -1:
+                    D_curr.load_state_dict(
+                        torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+                else:
+                    missing_keys, unexpected_keys = D_curr.load_state_dict(
+                        torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'],
+                        strict=False)
+                    if unexpected_keys:
+                        raise ValueError(unexpected_keys)
 
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
@@ -399,7 +402,8 @@ if __name__ == '__main__':
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', type=float, default=0, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
-    parser.add_argument('--increase-num-layer-interval', type=int, default=5, help='interval to increase num_layer for D')
+    parser.add_argument('--ingan-disc-n-scales', type=int, default=3)
+    parser.add_argument('--ingan-disc-start-scale', type=int, default=5)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
