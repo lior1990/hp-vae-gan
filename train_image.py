@@ -33,7 +33,7 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
         if opt.scale_idx > opt.ingan_disc_start_scale:
-            D_curr = MultiScaleDiscriminator(opt.ingan_disc_n_scales)
+            D_curr = MultiScaleDiscriminator(opt.ingan_disc_n_scales).to(opt.device)
         else:
             D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
             if opt.vae_levels < opt.scale_idx:
