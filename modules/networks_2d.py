@@ -372,8 +372,9 @@ class GeneratorHPVAEGAN(nn.Module):
 
 
 class MultiScaleDiscriminator(nn.Module):
-    def __init__(self, n_scales, scale_factor=2, base_channels=128, extra_conv_layers=0):
+    def __init__(self, n_scales, padding_mode, scale_factor=2, base_channels=128, extra_conv_layers=0):
         super(MultiScaleDiscriminator, self).__init__()
+        self.padding_mode = padding_mode
         self.base_channels = base_channels
         self.scale_factor = scale_factor
         self.extra_conv_layers = extra_conv_layers
@@ -393,13 +394,13 @@ class MultiScaleDiscriminator(nn.Module):
         net = []
 
         # Entry block
-        net += [nn.utils.spectral_norm(nn.Conv2d(3, base_channels, kernel_size=3, stride=1)),
+        net += [nn.utils.spectral_norm(nn.Conv2d(3, base_channels, kernel_size=3, stride=1, padding_mode=self.padding_mode)),
                 nn.BatchNorm2d(base_channels),
                 nn.LeakyReLU(0.2, True)]
 
         # Downscaling blocks
         # A sequence of strided conv-blocks. Image dims shrink by 2, channels dim expands by 2 at each block
-        net += [nn.utils.spectral_norm(nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2)),
+        net += [nn.utils.spectral_norm(nn.Conv2d(base_channels, base_channels * 2, kernel_size=3, stride=2, padding_mode=self.padding_mode)),
                 nn.BatchNorm2d(base_channels * 2),
                 nn.LeakyReLU(0.2, True)]
 
@@ -407,7 +408,8 @@ class MultiScaleDiscriminator(nn.Module):
         net += [nn.utils.spectral_norm(nn.Conv2d(in_channels=base_channels * 2,
                                                  out_channels=base_channels * 2,
                                                  kernel_size=3,
-                                                 bias=True)),
+                                                 bias=True,
+                                                 padding_mode=self.padding_mode)),
                 nn.BatchNorm2d(base_channels * 2),
                 nn.LeakyReLU(0.2, True)]
 
@@ -416,13 +418,14 @@ class MultiScaleDiscriminator(nn.Module):
             net += [nn.utils.spectral_norm(nn.Conv2d(in_channels=base_channels * 2,
                                                      out_channels=base_channels * 2,
                                                      kernel_size=3,
-                                                     bias=True)),
+                                                     bias=True,
+                                                     padding_mode=self.padding_mode)),
                     nn.BatchNorm2d(base_channels * 2),
                     nn.LeakyReLU(0.2, True)]
 
         # Final conv-block
         # Ends with a Sigmoid to get a range of 0-1
-        net += nn.Sequential(nn.utils.spectral_norm(nn.Conv2d(base_channels * 2, 1, kernel_size=1)),
+        net += nn.Sequential(nn.utils.spectral_norm(nn.Conv2d(base_channels * 2, 1, kernel_size=1, padding_mode=self.padding_mode)),
                              nn.Sigmoid())
 
         # Make it a valid layers sequence and return
