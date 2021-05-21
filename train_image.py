@@ -57,10 +57,15 @@ def train(opt, netG):
     if not opt.train_all:
         if opt.scale_idx > 0:
             train_depth = opt.train_depth
-            parameter_list += [
-                {"params": block.parameters(),
-                 "lr": opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))}
-                for idx, block in enumerate(netG.body[-train_depth:])]
+            for idx, block in enumerate(netG.body[-train_depth:]):
+                lr = opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))
+                parameter_list.append(
+                    {
+                        "params": block.parameters(),
+                        "lr": lr,
+                    }
+                )
+                print(f"Learning rate for block {idx} is {lr}")
         else:
             # VQVAE
             parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -180,22 +185,23 @@ def train(opt, netG):
             #################
 
             # Train 3D Discriminator
-            D_curr.zero_grad()
-            real_discrimination_map = D_curr(real)
-            errD_real = -real_discrimination_map.mean()
+            for _ in range(opt.d_steps):
+                D_curr.zero_grad()
+                real_discrimination_map = D_curr(real)
+                errD_real = -real_discrimination_map.mean()
 
-            # train with fake
-            #################
-            fake = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)[0]
+                # train with fake
+                #################
+                fake = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)[0]
 
-            # Train 3D Discriminator
-            output = D_curr(fake.detach())
-            errD_fake = output.mean()
+                # Train 3D Discriminator
+                output = D_curr(fake.detach())
+                errD_fake = output.mean()
 
-            gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device)
-            errD_total = errD_real + errD_fake + gradient_penalty
-            errD_total.backward()
-            optimizerD.step()
+                gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device)
+                errD_total = errD_real + errD_fake + gradient_penalty
+                errD_total.backward()
+                optimizerD.step()
 
             ############################
             # (3) Update G network: maximize D(G(z))
@@ -405,6 +411,7 @@ if __name__ == '__main__':
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
     parser.add_argument('--ingan-disc-n-scales', type=int, default=3)
     parser.add_argument('--ingan-disc-start-scale', type=int, default=5)
+    parser.add_argument('--d-steps', type=int, default=1, help='D steps before G')
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
