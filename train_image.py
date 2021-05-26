@@ -205,6 +205,11 @@ def train(opt, netG):
             # (3) Update G network: maximize D(G(z))
             ###########################
             errG_total = 0
+
+            if opt.scale_idx == 0:
+                # support GAN training in scale 0
+                errG_total = embedding_loss
+
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
 
@@ -421,7 +426,6 @@ if __name__ == '__main__':
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
 
-    assert opt.vae_levels > 0
     assert opt.disc_loss_weight > 0
 
     if opt.data_rep < opt.batch_size:
