@@ -293,6 +293,8 @@ def eval_netG(image_path, save_dir, opt, netG):
 
     original_image_path = opt.image_path
     original_rep = opt.data_rep
+    original_hflip = opt.hflip
+    opt.hflip = False  # disable hflip in eval
     opt.image_path = image_path
     opt.data_rep = 1
     dataset = MultipleImageDataset(opt)
@@ -345,6 +347,7 @@ def eval_netG(image_path, save_dir, opt, netG):
 
     opt.image_path = original_image_path
     opt.data_rep = original_rep
+    opt.hflip = original_hflip
 
 
 if __name__ == '__main__':
