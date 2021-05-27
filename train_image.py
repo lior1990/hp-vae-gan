@@ -58,14 +58,14 @@ def train(opt, netG):
         if opt.scale_idx > 0:
             train_depth = opt.train_depth
             for idx, block in enumerate(netG.body[-train_depth:]):
-                lr = opt.lr_g * (opt.lr_scale ** (len(netG.body[-train_depth:]) - 1 - idx))
+                lr = max(opt.lr_g * (opt.lr_scale ** (len(netG.body) - 1 - idx)), opt.min_lr_g)
                 parameter_list.append(
                     {
                         "params": block.parameters(),
                         "lr": lr,
                     }
                 )
-                print(f"Learning rate for block {idx} is {lr}")
+                print(f"Learning rate for block {idx} at scale {opt.scale_idx} is {lr}")
         else:
             # VQVAE
             parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -387,13 +387,14 @@ if __name__ == '__main__':
     # optimization hyper parameters:
     parser.add_argument('--niter', type=int, default=50000, help='number of iterations to train per scale')
     parser.add_argument('--lr-g', type=float, default=0.0005, help='learning rate, default=0.0005')
+    parser.add_argument('--min-lr-g', type=float, default=0.00001, help='min learning rate for G')
     parser.add_argument('--lr-d', type=float, default=0.0005, help='learning rate, default=0.0005')
     parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
     parser.add_argument('--lambda-grad', type=float, default=0.1, help='gradient penelty weight')
     parser.add_argument('--rec-weight', type=float, default=10., help='reconstruction loss weight')
     parser.add_argument('--kl-weight', type=float, default=1., help='reconstruction loss weight')
     parser.add_argument('--disc-loss-weight', type=float, default=1.0, help='discriminator weight')
-    parser.add_argument('--lr-scale', type=float, default=0.2, help='scaling of learning rate for lower stages')
+    parser.add_argument('--lr-scale', type=float, default=0.8, help='scaling of learning rate for lower stages')
     parser.add_argument('--train-depth', type=int, default=1, help='how many layers are trained if growing')
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', type=float, default=0, help='constant noise amplitude')
