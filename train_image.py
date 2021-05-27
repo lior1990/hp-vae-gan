@@ -168,7 +168,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_loss, encoding_indices = G_curr(real_zero, [], mode="rec")
+        generated, embedding_loss, encoding_indices, _ = G_curr(real_zero, [], mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -190,7 +190,7 @@ def train(opt, netG):
 
                 # train with fake
                 #################
-                fake = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)[0]
+                fake, fake_embedding_loss, _, last_residual_tuple = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
 
                 # Train 3D Discriminator
                 output = D_curr(fake.detach())
@@ -208,7 +208,11 @@ def train(opt, netG):
 
             if opt.scale_idx == 0:
                 # support GAN training in scale 0
-                errG_total = embedding_loss
+                errG_total += embedding_loss + fake_embedding_loss
+            else:
+                residual_result, prev_result = last_residual_tuple
+                # minimize changes in between residual blocks
+                errG_total += opt.rec_loss(residual_result, prev_result)
 
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
@@ -251,7 +255,7 @@ def train(opt, netG):
 
                     G_curr.eval()
                     for _ in range(3):
-                        fake, _, ref_encoding_indices = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
+                        fake, _, ref_encoding_indices, _ = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
                     G_curr.train()

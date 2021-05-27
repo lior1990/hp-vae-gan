@@ -302,9 +302,9 @@ class GeneratorHPVAEGAN(nn.Module):
         embedding_loss, z_q, _, _, encoding_indices = self.vector_quantization(z_e)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
-        x_prev_out = self.refinement_layers(0, vqvae_out, noise_amp, mode)
+        x_prev_out, last_residual_tuple = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
-        return x_prev_out, embedding_loss, encoding_indices
+        return x_prev_out, embedding_loss, encoding_indices, last_residual_tuple
 
     def forward_w_interpolation(self, img_all_scales, interpolation_indices):
         if interpolation_indices is None:
@@ -355,6 +355,8 @@ class GeneratorHPVAEGAN(nn.Module):
         return z_e
 
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode):
+        last_residual_tuple = None  # the last pair of x after residual block and its prev
+
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
@@ -368,7 +370,9 @@ class GeneratorHPVAEGAN(nn.Module):
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
-        return x_prev_out
+            last_residual_tuple = (x_prev, x_prev_out_up)
+
+        return x_prev_out, last_residual_tuple
 
 
 class MultiScaleDiscriminator(nn.Module):
