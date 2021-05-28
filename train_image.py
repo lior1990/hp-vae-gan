@@ -51,6 +51,10 @@ def train(opt, netG):
         # Current optimizers
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
 
+    if opt.residual_loss_start_scale <= opt.scale_idx:
+        residual_loss_weight = round(opt.residual_loss_weight ** (opt.residual_loss_scale_factor * opt.scale_idx), 2)
+        print(f"residual_loss_weight: {residual_loss_weight}")
+
     parameter_list = []
     # Generator Adversary
 
@@ -209,11 +213,12 @@ def train(opt, netG):
             if opt.scale_idx == 0:
                 # support GAN training in scale 0
                 errG_total += embedding_loss + fake_embedding_loss
-            else:
+
+            if opt.residual_loss_start_scale <= opt.scale_idx:
                 residual_result, prev_result = last_residual_tuple
                 # minimize changes in between residual blocks
                 residual_blocks_diff_loss = opt.rec_loss(residual_result, prev_result)
-                errG_total += residual_blocks_diff_loss
+                errG_total += residual_blocks_diff_loss * residual_loss_weight
 
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
@@ -249,7 +254,7 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
-            if opt.scale_idx > 0:
+            if opt.residual_loss_start_scale <= opt.scale_idx:
                 opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx), residual_blocks_diff_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
@@ -410,6 +415,9 @@ if __name__ == '__main__':
     parser.add_argument('--ingan-disc-n-scales', type=int, default=3)
     parser.add_argument('--ingan-disc-start-scale', type=int, default=5)
     parser.add_argument('--d-steps', type=int, default=1, help='D steps before G')
+    parser.add_argument('--residual-loss-start-scale', type=int, default=1)
+    parser.add_argument('--residual-loss-weight', type=float, default=1.1)
+    parser.add_argument('--residual-loss-scale-factor', type=float, default=1.2)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
@@ -439,6 +447,7 @@ if __name__ == '__main__':
     opt = parser.parse_args()
 
     assert opt.disc_loss_weight > 0
+    assert opt.residual_loss_start_scale > 0
 
     if opt.data_rep < opt.batch_size:
         opt.data_rep = opt.batch_size
