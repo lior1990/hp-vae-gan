@@ -32,6 +32,7 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 def train(opt, netG):
     if opt.vae_levels < opt.scale_idx + 1:
+        print(f"Starting GAN training at scale {opt.scale_idx}")
         if opt.scale_idx > opt.ingan_disc_start_scale:
             print("InGAN Disc")
             D_curr = MultiScaleDiscriminator(opt.ingan_disc_n_scales, opt.padding_mode).to(opt.device)
