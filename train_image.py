@@ -212,7 +212,8 @@ def train(opt, netG):
             else:
                 residual_result, prev_result = last_residual_tuple
                 # minimize changes in between residual blocks
-                errG_total += opt.rec_loss(residual_result, prev_result)
+                residual_blocks_diff_loss = opt.rec_loss(residual_result, prev_result)
+                errG_total += residual_blocks_diff_loss
 
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
@@ -248,6 +249,8 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
+            if opt.scale_idx > 0:
+                opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx), residual_blocks_diff_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
