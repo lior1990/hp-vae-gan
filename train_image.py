@@ -190,7 +190,7 @@ def train(opt, netG):
 
                 # train with fake
                 #################
-                fake, fake_embedding_loss, _, last_residual_tuple = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
+                fake, fake_embedding_loss, _, last_residual_tuple = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
 
                 # Train 3D Discriminator
                 output = D_curr(fake.detach())
@@ -258,7 +258,7 @@ def train(opt, netG):
 
                     G_curr.eval()
                     for _ in range(3):
-                        fake, _, ref_encoding_indices, _ = G_curr(None, opt.Noise_Amps, mode="rec_noise", reference_img=ref_real_zero)
+                        fake, _, ref_encoding_indices, _ = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
                     G_curr.train()
@@ -390,6 +390,7 @@ if __name__ == '__main__':
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
     parser.add_argument('--interpolation-method', type=str, default="bilinear", help="upscale interpolation method")
     parser.add_argument('--fixed-scales', action='store_true', default=False, help='use hard-coded scales')
+    parser.add_argument('--fake-mode', type=str, default="rec", help='fake mode (rec/rec_noise)')
 
     # optimization hyper parameters:
     parser.add_argument('--niter', type=int, default=50000, help='number of iterations to train per scale')
