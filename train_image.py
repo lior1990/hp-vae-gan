@@ -257,10 +257,11 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
+                if opt.residual_loss_start_scale <= opt.scale_idx:
+                    opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx),
+                                           residual_blocks_diff_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
-            if opt.residual_loss_start_scale <= opt.scale_idx:
-                opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx), residual_blocks_diff_loss.item(), iteration)
 
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
