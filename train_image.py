@@ -53,7 +53,11 @@ def train(opt, netG):
         optimizerD = optim.Adam(D_curr.parameters(), lr=opt.lr_d, betas=(opt.beta1, 0.999))
 
     if opt.residual_loss_start_scale <= opt.scale_idx:
-        residual_loss_weight = round(opt.residual_loss_weight ** (opt.residual_loss_scale_factor * opt.scale_idx), 2)
+        residual_loss_weight = opt.residual_loss_weight
+
+        if opt.residual_loss_scale_factor > 0:
+            residual_loss_weight = round(opt.residual_loss_weight ** (opt.residual_loss_scale_factor * opt.scale_idx), 2)
+
         print(f"residual_loss_weight: {residual_loss_weight}")
 
     parameter_list = []
@@ -413,12 +417,12 @@ if __name__ == '__main__':
     parser.add_argument('--grad-clip', type=float, default=5, help='gradient clip')
     parser.add_argument('--const-amp', type=float, default=0, help='constant noise amplitude')
     parser.add_argument('--train-all', action='store_true', default=False, help='train all levels w.r.t. train-depth')
-    parser.add_argument('--ingan-disc-n-scales', type=int, default=3)
+    parser.add_argument('--ingan-disc-n-scales', type=int, default=100)
     parser.add_argument('--ingan-disc-start-scale', type=int, default=5)
     parser.add_argument('--d-steps', type=int, default=1, help='D steps before G')
     parser.add_argument('--residual-loss-start-scale', type=int, default=1)
     parser.add_argument('--residual-loss-weight', type=float, default=1.1)
-    parser.add_argument('--residual-loss-scale-factor', type=float, default=1.2)
+    parser.add_argument('--residual-loss-scale-factor', type=float, default=1.1)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
