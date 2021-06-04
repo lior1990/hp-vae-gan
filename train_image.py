@@ -177,7 +177,7 @@ def train(opt, netG):
         ###########################
         total_loss = 0
 
-        generated, embedding_loss, encoding_indices, _ = G_curr(real_zero, [], mode="rec")
+        generated, embedding_loss, encoding_indices, _, _ = G_curr(real_zero, [], mode="rec")
 
         if opt.vae_levels >= opt.scale_idx + 1:
             rec_vae_loss = opt.rec_loss(generated, real)
@@ -199,7 +199,7 @@ def train(opt, netG):
 
                 # train with fake
                 #################
-                fake, fake_embedding_loss, _, last_residual_tuple = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
+                fake, fake_embedding_loss, _, last_residual_tuple, fake_z_e = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
 
                 # Train 3D Discriminator
                 output = D_curr(fake.detach())
@@ -224,6 +224,12 @@ def train(opt, netG):
                 # minimize changes in between residual blocks
                 residual_blocks_diff_loss = opt.rec_loss(residual_result, prev_result)
                 errG_total += residual_blocks_diff_loss * residual_loss_weight
+
+            if opt.indices_cycle_loss:
+                fake_zero_scale = F.interpolate(fake, size=real_zero.shape[2:])
+                fake_zero_scale_z_e = G_curr.encode(fake_zero_scale)
+                indices_cycle_loss = opt.rec_loss(fake_z_e.detach(), fake_zero_scale_z_e)
+                errG_total += indices_cycle_loss
 
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
@@ -263,13 +269,16 @@ def train(opt, netG):
             else:
                 opt.summary.add_scalar('Video/Scale {}/Rec VAE'.format(opt.scale_idx), rec_vae_loss.item(), iteration)
 
+            if opt.indices_cycle_loss:
+                opt.summary.add_scalar('Video/Scale {}/Indices cycle loss'.format(opt.scale_idx), indices_cycle_loss.item(), iteration)
+
             if iteration % opt.print_interval == 0:
                 with torch.no_grad():
                     fake_var = []
 
                     G_curr.eval()
                     for _ in range(3):
-                        fake, _, ref_encoding_indices, _ = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
+                        fake, _, ref_encoding_indices, _, _ = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
                     G_curr.train()
@@ -424,6 +433,7 @@ if __name__ == '__main__':
     parser.add_argument('--residual-loss-start-scale', type=int, default=1)
     parser.add_argument('--residual-loss-weight', type=float, default=1.1)
     parser.add_argument('--residual-loss-scale-factor', type=float, default=1.1)
+    parser.add_argument('--indices-cycle-loss', action='store_true', default=False)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")

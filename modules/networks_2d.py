@@ -304,7 +304,7 @@ class GeneratorHPVAEGAN(nn.Module):
 
         x_prev_out, last_residual_tuple = self.refinement_layers(0, vqvae_out, noise_amp, mode)
 
-        return x_prev_out, embedding_loss, encoding_indices, last_residual_tuple
+        return x_prev_out, embedding_loss, encoding_indices, last_residual_tuple, z_e
 
     def forward_w_interpolation(self, img_all_scales, interpolation_indices):
         if interpolation_indices is None:
