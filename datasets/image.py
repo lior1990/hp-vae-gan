@@ -27,13 +27,13 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
 
     def _transform_image(self, image, scale_index: int, hflip: bool):
         images_zero_scale = self._generate_image(image, scale_index)
-        images_zero_scale = K.image_to_tensor(images_zero_scale)
-        images_zero_scale = images_zero_scale / 255
         images_zero_scale = self._get_transformed_images(images_zero_scale, hflip)
         return images_zero_scale
 
     @staticmethod
     def _get_transformed_images(images, hflip):
+        images = K.image_to_tensor(images)
+        images = images / 255
 
         images_transformed = images
 
@@ -134,6 +134,34 @@ class MultipleImageDataset(ImageDataset):
 
     def _get_image(self, idx):
         return self.images[idx % self.num_of_images]
+
+
+class CachedMultipleImageDataset(MultipleImageDataset):
+    def __init__(self, opt, load_ref_image=False):
+        super(CachedMultipleImageDataset, self).__init__(opt, load_ref_image=load_ref_image)
+
+        self._zero_scale_cache = {}
+        self._scale_cache = {}
+
+    def init_cache(self):
+        cache = self._zero_scale_cache if self.opt.scale_idx == 0 else self._scale_cache
+
+        for img_idx, img in enumerate(self.images):
+            cache[img_idx] = self._generate_image(img, self.opt.scale_idx)
+
+    def __getitem__(self, idx):
+        img_zero_scale = self._zero_scale_cache[idx % self.num_of_images]
+
+        hflip = random.random() < 0.5 if self.opt.hflip else False
+
+        img_zero_scale = self._get_transformed_images(img_zero_scale, hflip)
+
+        if self.opt.scale_idx > 0:
+            img = self._scale_cache[idx % self.num_of_images]
+            img = self._get_transformed_images(img, hflip)
+            return img, img_zero_scale
+
+        return img_zero_scale
 
 
 class AllScalesMultipleImageDataset(MultipleImageDataset):

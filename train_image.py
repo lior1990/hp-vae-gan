@@ -24,7 +24,7 @@ import torch.optim as optim
 from modules import networks_2d
 from modules.losses import kl_criterion
 from modules.utils import calc_gradient_penalty
-from datasets.image import SingleImageDataset, MultipleImageDataset
+from datasets.image import SingleImageDataset, MultipleImageDataset, CachedMultipleImageDataset
 
 clear = colorama.Style.RESET_ALL
 blue = colorama.Fore.CYAN + colorama.Style.BRIGHT
@@ -446,6 +446,7 @@ if __name__ == '__main__':
     parser.add_argument('--img-size', type=int, default=256)
     parser.add_argument('--stop-scale-time', type=int, default=-1)
     parser.add_argument('--data-rep', type=int, default=1000, help='data repetition')
+    parser.add_argument('--cached-dataset', action='store_true', default=False)
 
     # main arguments
     parser.add_argument('--checkname', type=str, default='DEBUG', help='check name')
@@ -509,7 +510,7 @@ if __name__ == '__main__':
 
     # Date
     if os.path.isdir(opt.image_path):
-        dataset = MultipleImageDataset(opt)
+        dataset = CachedMultipleImageDataset(opt) if opt.cached_dataset else MultipleImageDataset(opt)
     elif os.path.isfile(opt.image_path):
         dataset = SingleImageDataset(opt)
     else:
@@ -572,6 +573,9 @@ if __name__ == '__main__':
     dynamic_batch_size = opt.batch_size
 
     while opt.scale_idx < opt.stop_scale + 1:
+        if opt.cached_dataset:
+            dataset.init_cache()
+
         if opt.scale_idx >= opt.sr_start_scale:
             print("Starting SR training")
             sr_generator = SRGenerator()
