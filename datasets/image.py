@@ -11,6 +11,8 @@ import cv2
 import logging
 import os
 
+from utils.images import SR_FIXED_SIZES
+
 
 class ImageDataset(Dataset, metaclass=ABCMeta):
     def __init__(self, opt):
@@ -44,8 +46,11 @@ class ImageDataset(Dataset, metaclass=ABCMeta):
         return images_transformed
 
     def _generate_image(self, image_full_scale, scale_idx):
-        base_size = utils.get_scales_by_index(scale_idx, self.opt.scale_factor, self.opt.stop_scale, self.opt.img_size, self.opt.fixed_scales)
-        scaled_size = [int(base_size * self.opt.ar), base_size]
+        if self.opt.fixed_scales:
+            scaled_size = SR_FIXED_SIZES[scale_idx]
+        else:
+            base_size = utils.get_scales_by_index(scale_idx, self.opt.scale_factor, self.opt.stop_scale, self.opt.img_size, self.opt.fixed_scales)
+            scaled_size = [int(base_size * self.opt.ar), base_size]
         # for pooling support
         # if scale_idx == 0:
         #     scaled_size[0] -= scaled_size[0] % 4

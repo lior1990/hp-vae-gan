@@ -436,7 +436,7 @@ if __name__ == '__main__':
     parser.add_argument('--residual-loss-weight', type=float, default=1.1)
     parser.add_argument('--residual-loss-scale-factor', type=float, default=1.1)
     parser.add_argument('--indices-cycle-loss', action='store_true', default=False)
-    parser.add_argument('--sr-start-scale', type=int, default=7)
+    parser.add_argument('--sr-start-scale', type=int, default=6)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
@@ -572,6 +572,7 @@ if __name__ == '__main__':
 
     while opt.scale_idx < opt.stop_scale + 1:
         if opt.scale_idx >= opt.sr_start_scale:
+            print("Starting SR training")
             sr_generator = SRGenerator()
             sr_generator.to(opt.device)
             train_sr(opt, sr_generator)

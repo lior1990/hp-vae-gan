@@ -94,14 +94,11 @@ def generate_noise(ref=None, size=None, type='normal', emb_size=None, device=Non
 
 def get_scales_by_index(index, scale_factor, stop_scale, img_size, use_fixed_scales):
     # todo: change the "jump" between the sizes in the last scales
-    if use_fixed_scales:
-        return SR_FIXED_SIZES[index][1]
-    else:
-        scale = math.pow(scale_factor, stop_scale - index)
-        s_size = math.ceil(scale * img_size)
+    scale = math.pow(scale_factor, stop_scale - index)
+    s_size = math.ceil(scale * img_size)
 
-        # s_size -= s_size % 4  # for pooling support
-        return s_size
+    # s_size -= s_size % 4  # for pooling support
+    return s_size
 
 
 def get_fps_by_index(index, opt):
@@ -136,8 +133,11 @@ def upscale(video, index, opt):
 def upscale_2d(image, index, opt):
     assert index > 0
 
-    next_shape = get_scales_by_index(index, opt.scale_factor, opt.stop_scale, opt.img_size, opt.fixed_scales)
-    next_shape = [int(next_shape * opt.ar), next_shape]
+    if opt.fixed_scales:
+        next_shape = SR_FIXED_SIZES[index]
+    else:
+        next_shape = get_scales_by_index(index, opt.scale_factor, opt.stop_scale, opt.img_size, opt.fixed_scales)
+        next_shape = [int(next_shape * opt.ar), next_shape]
 
     # Video interpolation
     img_up = interpolate(image, size=next_shape, interpolation=opt.interpolation_method)
