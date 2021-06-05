@@ -26,6 +26,16 @@ FIXED_SIZES = [
             [156, 232],
         ]
 
+SR_FIXED_SIZES = [
+            [21, 32],
+            [25, 38],
+            [29, 44],
+            [33, 50],
+            [39, 58],
+            [42, 62],
+            [168, 248],
+        ]
+
 
 def interpolate(input, size=None, scale_factor=None, interpolation='bilinear'):
     if input.dim() == 5:
@@ -50,7 +60,7 @@ def interpolate_3D(input, size=None, scale_factor=None, interpolation='trilinear
 
 def adjust_scales2image(size, opt):
     if opt.fixed_scales:
-        opt.stop_scale = len(FIXED_SIZES) - 1
+        opt.stop_scale = len(SR_FIXED_SIZES) - 1
     else:
         opt.num_scales = math.ceil((math.log(math.pow(opt.min_size / size, 1), opt.scale_factor_init))) + 1
         scale2stop = math.ceil(math.log(min([opt.max_size, size]) / size, opt.scale_factor_init))
@@ -85,7 +95,7 @@ def generate_noise(ref=None, size=None, type='normal', emb_size=None, device=Non
 def get_scales_by_index(index, scale_factor, stop_scale, img_size, use_fixed_scales):
     # todo: change the "jump" between the sizes in the last scales
     if use_fixed_scales:
-        return FIXED_SIZES[index][1]
+        return SR_FIXED_SIZES[index][1]
     else:
         scale = math.pow(scale_factor, stop_scale - index)
         s_size = math.ceil(scale * img_size)

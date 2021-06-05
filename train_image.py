@@ -1,5 +1,7 @@
 import matplotlib
 
+from modules.sr import SRGenerator
+from train_sr import train_sr, eval_sr
 from utils.ema import ExponentialMovingAverage
 from modules.networks_2d import MultiScaleDiscriminator
 
@@ -409,7 +411,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-size', type=int, default=256, help='image minimal size at the coarser scale')
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
     parser.add_argument('--interpolation-method', type=str, default="bilinear", help="upscale interpolation method")
-    parser.add_argument('--fixed-scales', action='store_true', default=False, help='use hard-coded scales')
+    parser.add_argument('--fixed-scales', action='store_true', default=True, help='use hard-coded scales')
     parser.add_argument('--fake-mode', type=str, default="rec", help='fake mode (rec/rec_noise)')
 
     # optimization hyper parameters:
@@ -434,6 +436,7 @@ if __name__ == '__main__':
     parser.add_argument('--residual-loss-weight', type=float, default=1.1)
     parser.add_argument('--residual-loss-scale-factor', type=float, default=1.1)
     parser.add_argument('--indices-cycle-loss', action='store_true', default=False)
+    parser.add_argument('--sr-start-scale', type=int, default=7)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
@@ -568,19 +571,25 @@ if __name__ == '__main__':
     dynamic_batch_size = opt.batch_size
 
     while opt.scale_idx < opt.stop_scale + 1:
-        if opt.scale_idx > 0:
-            netG.init_next_stage()
-        netG.to(opt.device)
+        if opt.scale_idx >= opt.sr_start_scale:
+            sr_generator = SRGenerator()
+            sr_generator.to(opt.device)
+            train_sr(opt, sr_generator)
+            eval_sr(opt, sr_generator, netG)
+        else:
+            if opt.scale_idx > 0:
+                netG.init_next_stage()
+            netG.to(opt.device)
 
-        if opt.scale_idx > 0 and opt.scale_idx % opt.reduce_batch_interval == 0 and opt.batch_size > 1:
-            # memory limitations
-            new_batch_size = max(dynamic_batch_size // 2, 1)
-            print(f"Reducing batch size from {dynamic_batch_size} to {new_batch_size}")
-            dynamic_batch_size = new_batch_size
-            opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
-            ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
+            if opt.scale_idx > 0 and opt.scale_idx % opt.reduce_batch_interval == 0 and opt.batch_size > 1:
+                # memory limitations
+                new_batch_size = max(dynamic_batch_size // 2, 1)
+                print(f"Reducing batch size from {dynamic_batch_size} to {new_batch_size}")
+                dynamic_batch_size = new_batch_size
+                opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
+                ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
 
-        train(opt, netG)
+            train(opt, netG)
 
         # Increase scale
         opt.scale_idx += 1
