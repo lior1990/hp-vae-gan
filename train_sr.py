@@ -33,15 +33,13 @@ def train_sr(opt, sr_generator):
     }
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
-    sr_dataset = SRImageDataset(opt)
-    sr_data_loader = DataLoader(sr_dataset, opt.batch_size*2, shuffle=True, num_workers=0)
-    iterator = iter(sr_data_loader)
+    iterator = iter(opt.data_loader)
 
     for iteration in epoch_iterator:
         try:
             data = next(iterator)
         except StopIteration:
-            iterator = iter(sr_data_loader)
+            iterator = iter(opt.data_loader)
             data = next(iterator)
 
         real, _ = data
