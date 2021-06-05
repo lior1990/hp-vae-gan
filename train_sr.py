@@ -45,11 +45,12 @@ def train_sr(opt, sr_generator):
         real, _ = data
         real = real.to(opt.device)
 
-        lam = np.random.uniform()
-        bbx1, bby1, bbx2, bby2 = rand_bbox(real.size(), lam)
-        batch_index_permutation = torch.randperm(real.size()[0])
+        for _ in range(opt.n_times_cutmix):
+            lam = np.random.uniform()
+            bbx1, bby1, bbx2, bby2 = rand_bbox(real.size(), lam)
+            batch_index_permutation = torch.randperm(real.size()[0])
 
-        real[:, :, bbx1:bbx2, bby1:bby2] = real[batch_index_permutation, :, bbx1:bbx2, bby1:bby2]
+            real[:, :, bbx1:bbx2, bby1:bby2] = real[batch_index_permutation, :, bbx1:bbx2, bby1:bby2]
 
         cutmix_blurry_real = F.interpolate(real, size=(42, 62))
 

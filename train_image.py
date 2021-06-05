@@ -437,6 +437,7 @@ if __name__ == '__main__':
     parser.add_argument('--residual-loss-scale-factor', type=float, default=1.1)
     parser.add_argument('--indices-cycle-loss', action='store_true', default=False)
     parser.add_argument('--sr-start-scale', type=int, default=6)
+    parser.add_argument('--n-times-cutmix', type=int, default=3)
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
