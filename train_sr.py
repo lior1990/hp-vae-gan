@@ -105,6 +105,7 @@ def eval_sr(opt, sr_generator, netG):
     os.makedirs(fakes_folder, exist_ok=True)
     os.makedirs(reals_folder, exist_ok=True)
 
+    netG.eval()
     sr_generator.eval()
     with torch.no_grad():
         def norm(t):
@@ -145,6 +146,7 @@ def eval_sr(opt, sr_generator, netG):
             plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
 
     sr_generator.train()
+    netG.train()
 
     opt.image_path = original_image_path
     opt.data_rep = original_rep
