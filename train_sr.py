@@ -74,7 +74,7 @@ def train_sr(opt, sr_generator):
                 # todo: add eval using ref_data_loader?
                 opt.summary.visualize_image(opt, iteration, real, 'SR Target')
                 opt.summary.visualize_image(opt, iteration, sr_real, 'SR Output')
-                opt.summary.visualize_image(opt, iteration, cutmix_blurry_real, 'SR Input', dim=3)
+                opt.summary.visualize_image(opt, iteration, cutmix_blurry_real, 'SR Input')
 
     epoch_iterator.close()
 
