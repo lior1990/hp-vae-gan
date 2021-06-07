@@ -266,7 +266,8 @@ class GeneratorHPVAEGAN(nn.Module):
 
         vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        self.vector_quantization = Codebook(opt.n_embeddings, vqvae_embedding_dim)
+        vqvae_class = VectorQuantizer if opt.old_vqvae else Codebook
+        self.vector_quantization = vqvae_class(opt.n_embeddings, vqvae_embedding_dim)
         self.decoder = nn.Sequential()
 
         # Normal Decoder

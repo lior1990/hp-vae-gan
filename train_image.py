@@ -463,6 +463,7 @@ if __name__ == '__main__':
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
     parser.add_argument('--reduce-batch-interval', type=int, default=15)
+    parser.add_argument('--old-vqvae', action='store_true', default=False)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()

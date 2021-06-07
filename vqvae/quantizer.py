@@ -17,7 +17,7 @@ class VectorQuantizer(nn.Module):
     - beta : commitment cost used in loss term, beta * ||z_e(x)-sg[e]||^2
     """
 
-    def __init__(self, n_e, e_dim, beta):
+    def __init__(self, n_e, e_dim, beta=0.25):
         super(VectorQuantizer, self).__init__()
         self.n_e = n_e
         self.e_dim = e_dim
@@ -26,7 +26,7 @@ class VectorQuantizer(nn.Module):
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
         self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
 
-    def forward(self, z, mode):
+    def forward(self, z):
         """
         Inputs the output of the encoder network z and maps it to a discrete 
         one-hot vector that is the index of the closest embedding vector e_j
@@ -46,8 +46,8 @@ class VectorQuantizer(nn.Module):
 
         min_encoding_indices = self.find_closest_encodings_indices(z)
 
-        if mode in ["rand", "vq_rand"]:
-            min_encoding_indices = (min_encoding_indices + torch.randint_like(min_encoding_indices, 0, self.n_e)) % self.n_e
+        # if mode in ["rand", "vq_rand"]:
+        #     min_encoding_indices = (min_encoding_indices + torch.randint_like(min_encoding_indices, 0, self.n_e)) % self.n_e
 
         min_encodings, z_q = self.get_quantized_embeddings(min_encoding_indices)
         z_q = z_q.view(z.shape)
@@ -65,6 +65,7 @@ class VectorQuantizer(nn.Module):
 
         # reshape back to match original input shape
         z_q = z_q.permute(0, 3, 1, 2).contiguous()
+        min_encoding_indices = min_encoding_indices.reshape(z_q.shape[0], z_q.shape[-2], z_q.shape[-1])
 
         return loss, z_q, perplexity, min_encodings, min_encoding_indices
 
