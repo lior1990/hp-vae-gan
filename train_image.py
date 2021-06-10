@@ -320,7 +320,8 @@ def train(opt, netG):
 
     samples_folder = os.path.join(opt.saver.experiment_dir, f"generated_images_{opt.scale_idx}")
     os.makedirs(samples_folder, exist_ok=True)
-    eval_netG(opt.eval_dataset, samples_folder, opt, netG)
+    if not opt.skip_eval:
+        eval_netG(opt.eval_dataset, samples_folder, opt, netG)
 
 
 def eval_netG(image_path, save_dir, opt, netG):
@@ -468,6 +469,7 @@ if __name__ == '__main__':
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
+    parser.add_argument('--skip-eval', action='store_true', default=False)
     parser.add_argument('--reduce-batch-interval', type=int, default=15)
     parser.add_argument('--old-vqvae', action='store_true', default=False)
 
@@ -593,6 +595,10 @@ if __name__ == '__main__':
 
         if opt.scale_idx >= opt.sr_start_scale:
             print("Starting SR training")
+
+            if opt.resumed_idx != -1:
+                netG.to(opt.device)
+
             if dynamic_batch_size == 1:
                 # batch size must be greater than 1 for cutmix
                 dynamic_batch_size = 2
