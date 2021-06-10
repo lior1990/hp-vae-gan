@@ -579,6 +579,9 @@ if __name__ == '__main__':
 
         if opt.scale_idx >= opt.sr_start_scale:
             print("Starting SR training")
+            if dynamic_batch_size == 1:
+                # batch size must be greater than 1 for cutmix
+                opt.data_loader = DataLoader(dataset, batch_size=2, num_workers=0)
             sr_generator = SRGenerator()
             sr_generator.to(opt.device)
             train_sr(opt, sr_generator)

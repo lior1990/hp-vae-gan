@@ -52,7 +52,8 @@ def train_sr(opt, sr_generator):
 
             real[:, :, bbx1:bbx2, bby1:bby2] = real[batch_index_permutation, :, bbx1:bbx2, bby1:bby2]
 
-        cutmix_blurry_real = F.interpolate(real, size=(42, 62))
+        cutmix_blurry_real = F.interpolate(real, scale_factor=0.5)
+        cutmix_blurry_real = F.interpolate(cutmix_blurry_real, size=(real.shape[-2], real.shape[-1]))
 
         sr_generator.zero_grad()
         sr_real = sr_generator(cutmix_blurry_real)
