@@ -33,20 +33,26 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
 def train(opt, netG):
-    if opt.vae_levels < opt.scale_idx + 1:
-        print(f"Starting GAN training at scale {opt.scale_idx}")
+    is_training_gan = opt.scale_idx in gan_levels
+    if is_training_gan:
+        print(f"GAN training at scale {opt.scale_idx}")
+
+        gan_training_index = gan_levels.index(opt.scale_idx)
+
         if opt.scale_idx > opt.ingan_disc_start_scale:
             print("InGAN Disc")
             D_curr = MultiScaleDiscriminator(opt.ingan_disc_n_scales, opt.padding_mode).to(opt.device)
         else:
             D_curr = getattr(networks_2d, opt.discriminator)(opt).to(opt.device)
-            if opt.vae_levels < opt.scale_idx:
+            if gan_training_index > 0:
+                prev_gan_scale_idx = gan_levels[gan_training_index-1]
+
                 if (opt.netG != '') and opt.resumed_idx != -1:
                     D_curr.load_state_dict(
-                        torch.load('{}/netD_{}.pth'.format(opt.resume_dir, opt.scale_idx - 1))['state_dict'])
+                        torch.load('{}/netD_{}.pth'.format(opt.resume_dir, prev_gan_scale_idx))['state_dict'])
                 else:
                     missing_keys, unexpected_keys = D_curr.load_state_dict(
-                        torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, opt.scale_idx - 1))['state_dict'],
+                        torch.load('{}/netD_{}.pth'.format(opt.saver.experiment_dir, prev_gan_scale_idx))['state_dict'],
                         strict=False)
                     if unexpected_keys:
                         raise ValueError(unexpected_keys)
@@ -106,7 +112,7 @@ def train(opt, netG):
     if is_parallel:
         print("Working with data parallel")
         G_curr = torch.nn.DataParallel(netG)
-        if opt.vae_levels < opt.scale_idx + 1:
+        if is_training_gan:
             D_curr = torch.nn.DataParallel(D_curr)
     else:
         G_curr = netG
@@ -181,7 +187,7 @@ def train(opt, netG):
 
         generated, embedding_loss, encoding_indices, _, _ = G_curr(real_zero, [], mode="rec")
 
-        if opt.vae_levels >= opt.scale_idx + 1:
+        if not is_training_gan:
             rec_vae_loss = opt.rec_loss(generated, real)
             vqvae_loss = opt.rec_weight * rec_vae_loss + embedding_loss
 
@@ -257,11 +263,11 @@ def train(opt, netG):
         if opt.visualize:
             # Tensorboard
             opt.summary.add_scalar('Video/Scale {}/noise_amp'.format(opt.scale_idx), opt.noise_amp, iteration)
-            if opt.vae_levels >= opt.scale_idx + 1:
+            if not is_training_gan:
                 opt.summary.add_scalar('Video/Scale {}/embedding loss'.format(opt.scale_idx), embedding_loss.item(), iteration)
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
-            if opt.vae_levels < opt.scale_idx + 1:
+            if is_training_gan:
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
@@ -291,7 +297,7 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
                 opt.summary.visualize_image(opt, iteration, ref_encoding_indices, 'Ref Indices', dim=3)
                 opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
-                if opt.vae_levels < opt.scale_idx + 1:
+                if is_training_gan:
                     opt.summary.visualize_image(opt, iteration, fake, 'Fake')
                     opt.summary.visualize_image(opt, iteration, real_discrimination_map.squeeze(dim=1), 'Real D map', dim=3)
                     opt.summary.visualize_image(opt, iteration, fake_discrimination_map.squeeze(dim=1), 'Fake D map', dim=3)
@@ -305,7 +311,7 @@ def train(opt, netG):
         'state_dict': netG.state_dict(),
         'optimizer': optimizerG.state_dict(),
     }, 'netG.pth')
-    if opt.vae_levels < opt.scale_idx + 1:
+    if is_training_gan:
         opt.saver.save_checkpoint({
             'scale': opt.scale_idx,
             'state_dict': D_curr.module.state_dict() if is_parallel else D_curr.state_dict(),
@@ -391,7 +397,7 @@ if __name__ == '__main__':
     parser.add_argument('--nc-im', type=int, default=3, help='# channels')
     parser.add_argument('--nfc', type=int, default=64, help='model basic # channels')
     parser.add_argument('--latent-dim', type=int, default=128, help='Latent dim size')
-    parser.add_argument('--vae-levels', type=int, default=3, help='# VAE levels')
+    parser.add_argument('--vae-levels', type=str, default="3", help='# VAE levels')
     parser.add_argument('--enc-blocks', type=int, default=2, help='# encoder blocks')
     parser.add_argument('--ker-size', type=int, default=3, help='kernel size')
     parser.add_argument('--num-layer', type=int, default=5, help='number of layers')
@@ -432,7 +438,7 @@ if __name__ == '__main__':
     parser.add_argument('--ingan-disc-n-scales', type=int, default=4)
     parser.add_argument('--ingan-disc-start-scale', type=int, default=100)
     parser.add_argument('--d-steps', type=int, default=1, help='D steps before G')
-    parser.add_argument('--residual-loss-start-scale', type=int, default=1)
+    parser.add_argument('--residual-loss-start-scale', type=int, default=100)
     parser.add_argument('--residual-loss-weight', type=float, default=1.1)
     parser.add_argument('--residual-loss-scale-factor', type=float, default=1.1)
     parser.add_argument('--indices-cycle-loss', action='store_true', default=False)
@@ -533,6 +539,14 @@ if __name__ == '__main__':
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale
 
+    if "," in opt.vae_levels:
+        vae_levels = eval(opt.vae_levels)
+    else:
+        vae_levels = list(range(int(opt.vae_levels)))
+
+    gan_levels = sorted(set(range(opt.stop_scale+1)) - set(vae_levels))
+    print(f"vae levels: {vae_levels}, gan levels: {gan_levels}")
+
     opt.dataset = dataset
     opt.data_loader = data_loader
 
@@ -581,7 +595,8 @@ if __name__ == '__main__':
             print("Starting SR training")
             if dynamic_batch_size == 1:
                 # batch size must be greater than 1 for cutmix
-                opt.data_loader = DataLoader(dataset, batch_size=2, num_workers=0)
+                dynamic_batch_size = 2
+                opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
             sr_generator = SRGenerator()
             sr_generator.to(opt.device)
             train_sr(opt, sr_generator)
