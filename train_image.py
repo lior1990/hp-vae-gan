@@ -2,6 +2,8 @@ import matplotlib
 
 from modules.sr import SRGenerator
 from train_sr import train_sr, eval_sr
+import numpy as np
+from utils.cutmix import rand_bbox
 from utils.ema import ExponentialMovingAverage
 from modules.networks_2d import MultiScaleDiscriminator
 
@@ -141,7 +143,6 @@ def train(opt, netG):
         if opt.scale_idx > 0:
             real, real_zero = data
             real = real.to(opt.device)
-            real_zero = real_zero.to(opt.device)
         else:
             real = data
             real = real.to(opt.device)
@@ -160,6 +161,17 @@ def train(opt, netG):
             ref_real = ref_data
             ref_real_zero = ref_data
             ref_real_zero = ref_real_zero.to(opt.device)
+
+        if opt.cutmix:
+            for _ in range(opt.n_times_cutmix):
+                lam = np.random.uniform()
+                bbx1, bby1, bbx2, bby2 = rand_bbox(real.size(), lam)
+                batch_index_permutation = torch.randperm(real.size()[0])
+
+                real[:, :, bbx1:bbx2, bby1:bby2] = real[batch_index_permutation, :, bbx1:bbx2, bby1:bby2]
+                real_zero = F.interpolate(real, size=real_zero.shape[2:])
+
+        real_zero = real_zero.to(opt.device)
 
         ############################
         # calculate noise_amp
@@ -472,6 +484,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip-eval', action='store_true', default=False)
     parser.add_argument('--reduce-batch-interval', type=int, default=15)
     parser.add_argument('--old-vqvae', action='store_true', default=False)
+    parser.add_argument('--cutmix', action='store_true', default=False)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
