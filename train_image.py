@@ -35,6 +35,9 @@ magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
 def train(opt, netG):
+    use_top_k = opt.top_k > 0 and opt.top_k < dynamic_batch_size
+    print(f"Use top k feature: {use_top_k}")
+
     is_training_gan = opt.scale_idx in gan_levels
     if is_training_gan:
         print(f"GAN training at scale {opt.scale_idx}")
@@ -256,6 +259,8 @@ def train(opt, netG):
 
             # Train with 3D Discriminator
             fake_discrimination_map = D_curr(fake)
+            if use_top_k:
+                fake_discrimination_map = torch.topk(fake_discrimination_map, opt.top_k, dim=0, sorted=False).values
             errG = -fake_discrimination_map.mean() * opt.disc_loss_weight
             errG_total += errG
 
@@ -482,15 +487,21 @@ if __name__ == '__main__':
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
     parser.add_argument('--skip-eval', action='store_true', default=False)
-    parser.add_argument('--reduce-batch-interval', type=int, default=15)
+    parser.add_argument('--reduce-batch-interval', type=str, default="15")
     parser.add_argument('--old-vqvae', action='store_true', default=False)
     parser.add_argument('--cutmix', action='store_true', default=False)
+    parser.add_argument('--top-k', type=int, default=0, help="choose top-k results from the batch")
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
 
     assert opt.disc_loss_weight > 0
     assert opt.residual_loss_start_scale > 0
+
+    if "," in opt.reduce_batch_interval:
+        reduce_batch_interval = eval(opt.reduce_batch_interval)
+    else:
+        reduce_batch_interval = int(opt.reduce_batch_interval)
 
     if opt.data_rep < opt.batch_size:
         opt.data_rep = opt.batch_size
@@ -625,13 +636,18 @@ if __name__ == '__main__':
                 netG.init_next_stage()
             netG.to(opt.device)
 
-            if opt.scale_idx > 0 and opt.scale_idx % opt.reduce_batch_interval == 0 and opt.batch_size > 1:
-                # memory limitations
-                new_batch_size = max(dynamic_batch_size // 2, 1)
-                print(f"Reducing batch size from {dynamic_batch_size} to {new_batch_size}")
-                dynamic_batch_size = new_batch_size
-                opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
-                ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
+            if opt.scale_idx > 0 and dynamic_batch_size > 1:
+                if (
+                        (type(reduce_batch_interval) == int and opt.scale_idx % reduce_batch_interval == 0)
+                        or
+                        (type(reduce_batch_interval) == list and opt.scale_idx == reduce_batch_interval)
+                ):
+                    # memory limitations
+                    new_batch_size = max(dynamic_batch_size // 2, 1)
+                    print(f"Reducing batch size from {dynamic_batch_size} to {new_batch_size}")
+                    dynamic_batch_size = new_batch_size
+                    opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
+                    ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
 
             train(opt, netG)
 
