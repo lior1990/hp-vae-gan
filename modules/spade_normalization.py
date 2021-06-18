@@ -65,7 +65,7 @@ def get_nonspade_norm_layer(opt, norm_type='instance'):
 
 
 class SPADE(nn.Module):
-    def __init__(self, norm_layer: str, kernel_size: int, norm_nc: int, source_img_nc: int):
+    def __init__(self, norm_layer: str, kernel_size: int, norm_nc: int, vqvae_n_embeddings: int):
         super().__init__()
 
         ks = kernel_size
@@ -84,7 +84,7 @@ class SPADE(nn.Module):
 
         pw = ks // 2
         self.mlp_shared = nn.Sequential(
-            nn.Conv2d(1, nhidden, kernel_size=ks, padding=pw),
+            nn.Conv2d(vqvae_n_embeddings, nhidden, kernel_size=ks, padding=pw),
             nn.ReLU()
         )
         self.mlp_gamma = nn.Conv2d(nhidden, norm_nc, kernel_size=ks, padding=pw)
@@ -97,7 +97,7 @@ class SPADE(nn.Module):
         normalized = self.param_free_norm(x)
 
         # Part 2. produce scaling and bias conditioned on semantic map
-        source_img = F.interpolate(source_img.unsqueeze(dim=1).type(torch.FloatTensor).to(source_img.device), size=x.size()[-2:], mode='nearest')
+        source_img = F.interpolate(source_img, size=x.size()[-2:], mode='nearest')
         actv = self.mlp_shared(source_img)
         gamma = self.mlp_gamma(actv)
         beta = self.mlp_beta(actv)

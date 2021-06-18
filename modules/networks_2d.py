@@ -295,11 +295,11 @@ class GeneratorHPVAEGAN(nn.Module):
         def create_spade_seq():
             _stage = SPADESequential()
 
-            _stage.add_module('head', SPADEResnetBlock(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
+            _stage.add_module('head', SPADEResnetBlock(self.opt.n_embeddings, self.opt.nc_im, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
             for i in range(self.opt.num_layer):
-                block = SPADEResnetBlock(self.N, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True)
+                block = SPADEResnetBlock(self.opt.n_embeddings, self.N, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True)
                 _stage.add_module('block%d' % (i), block)
-            _stage.add_module('tail', SPADEResnetBlock(self.N, self.opt.nc_im, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
+            _stage.add_module('tail', SPADEResnetBlock(self.opt.n_embeddings, self.N, self.opt.nc_im, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
             return _stage
 
         self.body.append(create_spade_seq())
@@ -365,6 +365,11 @@ class GeneratorHPVAEGAN(nn.Module):
     def refinement_layers(self, start_idx, x_prev_out, noise_amp, mode, spade_img):
         last_residual_tuple = None  # the last pair of x after residual block and its prev
 
+        bs, h, w = spade_img.size()
+        nc = self.vector_quantization.n_codes
+        input_label = torch.zeros(bs, nc, h, w, device=self.opt.device)
+        input_label.scatter_(1, spade_img.unsqueeze(dim=1), 1.0)
+
         for idx, block in enumerate(self.body[start_idx:], start_idx):
             # Upscale
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
@@ -372,9 +377,9 @@ class GeneratorHPVAEGAN(nn.Module):
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == "rec_noise":
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], spade_img))
+                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], input_label))
             else:
-                x_prev = block((x_prev_out_up, spade_img))
+                x_prev = block((x_prev_out_up, input_label))
 
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
