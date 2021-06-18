@@ -134,7 +134,10 @@ def train(opt, netG):
     epoch_iterator = tools.create_progressbar(**progressbar_args)
 
     iterator = iter(opt.data_loader)
-    reference_iterator = iter(ref_data_loader)
+    if opt.ref_image_path:
+        reference_iterator = iter(ref_data_loader)
+
+    ref_real_zero = None
 
     for iteration in epoch_iterator:
         try:
@@ -151,19 +154,20 @@ def train(opt, netG):
             real = real.to(opt.device)
             real_zero = real
 
-        try:
-            ref_data = next(reference_iterator)
-        except StopIteration:
-            reference_iterator = iter(ref_data_loader)
-            ref_data = next(reference_iterator)
+        if opt.ref_image_path:
+            try:
+                ref_data = next(reference_iterator)
+            except StopIteration:
+                reference_iterator = iter(ref_data_loader)
+                ref_data = next(reference_iterator)
 
-        if opt.scale_idx > 0:
-            ref_real, ref_real_zero = ref_data
-            ref_real_zero = ref_real_zero.to(opt.device)
-        else:
-            ref_real = ref_data
-            ref_real_zero = ref_data
-            ref_real_zero = ref_real_zero.to(opt.device)
+            if opt.scale_idx > 0:
+                ref_real, ref_real_zero = ref_data
+                ref_real_zero = ref_real_zero.to(opt.device)
+            else:
+                ref_real = ref_data
+                ref_real_zero = ref_data
+                ref_real_zero = ref_real_zero.to(opt.device)
 
         if opt.cutmix:
             for _ in range(opt.n_times_cutmix):
@@ -222,7 +226,7 @@ def train(opt, netG):
 
                 # train with fake
                 #################
-                fake, fake_embedding_loss, _, last_residual_tuple, fake_z_e = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
+                fake, fake_embedding_loss, _, last_residual_tuple, fake_z_e = G_curr(real_zero, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
 
                 # Train 3D Discriminator
                 output = D_curr(fake.detach())
@@ -303,7 +307,7 @@ def train(opt, netG):
 
                     G_curr.eval()
                     for _ in range(3):
-                        fake, _, ref_encoding_indices, _, _ = G_curr(None, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
+                        fake, _, ref_encoding_indices, _, _ = G_curr(real_zero, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
                         fake_var.append(fake)
                     fake_var = torch.cat(fake_var, dim=0)
                     G_curr.train()
@@ -312,8 +316,9 @@ def train(opt, netG):
                 opt.summary.visualize_image(opt, iteration, generated, 'Generated')
                 opt.summary.visualize_image(opt, iteration, encoding_indices, 'Generated Indices', dim=3)
                 opt.summary.visualize_image(opt, iteration, fake_var, 'Fake var')
-                opt.summary.visualize_image(opt, iteration, ref_encoding_indices, 'Ref Indices', dim=3)
-                opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
+                if opt.ref_image_path:
+                    opt.summary.visualize_image(opt, iteration, ref_encoding_indices, 'Ref Indices', dim=3)
+                    opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
                 if is_training_gan:
                     opt.summary.visualize_image(opt, iteration, fake, 'Fake')
                     opt.summary.visualize_image(opt, iteration, real_discrimination_map.squeeze(dim=1), 'Real D map', dim=3)
@@ -435,7 +440,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-size', type=int, default=256, help='image minimal size at the coarser scale')
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
     parser.add_argument('--interpolation-method', type=str, default="bilinear", help="upscale interpolation method")
-    parser.add_argument('--fixed-scales', action='store_true', default=True, help='use hard-coded scales')
+    parser.add_argument('--fixed-scales', action='store_true', default=False, help='use hard-coded scales')
     parser.add_argument('--fake-mode', type=str, default="rec", help='fake mode (rec/rec_noise)')
 
     # optimization hyper parameters:
@@ -497,6 +502,7 @@ if __name__ == '__main__':
 
     assert opt.disc_loss_weight > 0
     assert opt.residual_loss_start_scale > 0
+    assert opt.ref_image_path or opt.fake_mode == "rec_noise"
 
     if "," in opt.reduce_batch_interval:
         reduce_batch_interval = eval(opt.reduce_batch_interval)
@@ -555,12 +561,13 @@ if __name__ == '__main__':
                              batch_size=opt.batch_size,
                              num_workers=0)
 
-    ref_dataset = MultipleImageDataset(opt, load_ref_image=True)
-    ref_data_loader = DataLoader(ref_dataset,
-                                 shuffle=True,
-                                 drop_last=False,
-                                 batch_size=opt.batch_size,
-                                 num_workers=0)
+    if opt.ref_image_path:
+        ref_dataset = MultipleImageDataset(opt, load_ref_image=True)
+        ref_data_loader = DataLoader(ref_dataset,
+                                     shuffle=True,
+                                     drop_last=False,
+                                     batch_size=opt.batch_size,
+                                     num_workers=0)
 
     if opt.stop_scale_time == -1:
         opt.stop_scale_time = opt.stop_scale
@@ -595,6 +602,15 @@ if __name__ == '__main__':
     assert hasattr(networks_2d, opt.generator)
     netG = getattr(networks_2d, opt.generator)(opt).to(opt.device)
 
+    dynamic_batch_size = opt.batch_size
+
+    def should_reduce_batch_size(scale_idx):
+        return (
+                (type(reduce_batch_interval) == int and scale_idx % reduce_batch_interval == 0)
+                or
+                (type(reduce_batch_interval) == tuple and scale_idx in reduce_batch_interval)
+        )
+
     if opt.netG != '':
         if not os.path.isfile(opt.netG):
             raise RuntimeError("=> no <G> checkpoint found at '{}'".format(opt.netG))
@@ -608,10 +624,15 @@ if __name__ == '__main__':
         opt.scale_idx += 1
         # NoiseAmp
         opt.Noise_Amps = torch.load(os.path.join(opt.resume_dir, 'Noise_Amps.pth'))['data']
+
+        for scale in range(opt.scale_idx):
+            if should_reduce_batch_size(scale):
+                new_batch_size = max(dynamic_batch_size // 2, 1)
+                print(f"Reducing batch size from {dynamic_batch_size} to {new_batch_size}")
+                dynamic_batch_size = new_batch_size
+
     else:
         opt.resumed_idx = -1
-
-    dynamic_batch_size = opt.batch_size
 
     while opt.scale_idx < opt.stop_scale + 1:
         if opt.cached_dataset:
@@ -637,17 +658,14 @@ if __name__ == '__main__':
             netG.to(opt.device)
 
             if opt.scale_idx > 0 and dynamic_batch_size > 1:
-                if (
-                        (type(reduce_batch_interval) == int and opt.scale_idx % reduce_batch_interval == 0)
-                        or
-                        (type(reduce_batch_interval) == list and opt.scale_idx == reduce_batch_interval)
-                ):
+                if should_reduce_batch_size(opt.scale_idx):
                     # memory limitations
                     new_batch_size = max(dynamic_batch_size // 2, 1)
                     print(f"Reducing batch size from {dynamic_batch_size} to {new_batch_size}")
                     dynamic_batch_size = new_batch_size
                     opt.data_loader = DataLoader(dataset, batch_size=dynamic_batch_size, num_workers=0)
-                    ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
+                    if opt.ref_image_path:
+                        ref_data_loader = DataLoader(ref_dataset, batch_size=dynamic_batch_size, num_workers=0)
 
             train(opt, netG)
 

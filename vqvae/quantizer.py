@@ -26,7 +26,7 @@ class VectorQuantizer(nn.Module):
         self.embedding = nn.Embedding(self.n_e, self.e_dim)
         self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
 
-    def forward(self, z):
+    def forward(self, z, mode):
         """
         Inputs the output of the encoder network z and maps it to a discrete 
         one-hot vector that is the index of the closest embedding vector e_j
@@ -46,8 +46,8 @@ class VectorQuantizer(nn.Module):
 
         min_encoding_indices = self.find_closest_encodings_indices(z)
 
-        # if mode in ["rand", "vq_rand"]:
-        #     min_encoding_indices = (min_encoding_indices + torch.randint_like(min_encoding_indices, 0, self.n_e)) % self.n_e
+        if mode == "rec_noise":
+            min_encoding_indices = (min_encoding_indices + torch.randint_like(min_encoding_indices, 0, self.n_e)) % self.n_e
 
         min_encodings, z_q = self.get_quantized_embeddings(min_encoding_indices)
         z_q = z_q.view(z.shape)

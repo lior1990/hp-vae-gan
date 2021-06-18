@@ -300,7 +300,7 @@ class GeneratorHPVAEGAN(nn.Module):
     def forward(self, img, noise_amp, mode='rand', reference_img=None):
         img_to_encode = img if reference_img is None else reference_img
         z_e = self.encode(img_to_encode)
-        embedding_loss, z_q, _, _, encoding_indices = self.vector_quantization(z_e)
+        embedding_loss, z_q, _, _, encoding_indices = self.vector_quantization(z_e, mode)
         vqvae_out = torch.tanh(self.decoder(z_q))
 
         x_prev_out, last_residual_tuple = self.refinement_layers(0, vqvae_out, noise_amp, mode)
@@ -363,7 +363,7 @@ class GeneratorHPVAEGAN(nn.Module):
             x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
-            if mode in ["rec_noise", "vq_rand"]:
+            if mode == "rec_noise":
                 noise = utils.generate_noise(ref=x_prev_out_up)
                 x_prev = block(x_prev_out_up + noise * noise_amp[idx + 1])
             else:

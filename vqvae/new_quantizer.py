@@ -40,7 +40,7 @@ class Codebook(nn.Module):
         self.z_avg.data.copy_(_k_rand)
         self.N.data.copy_(torch.ones(self.n_codes))
 
-    def forward(self, z):
+    def forward(self, z, mode):
         # z: [b, c, t, h, w]
         if self._need_init and self.training:
             self._init_embeddings(z)
@@ -50,6 +50,9 @@ class Codebook(nn.Module):
                     + (self.embeddings.t() ** 2).sum(dim=0, keepdim=True)
 
         encoding_indices = torch.argmin(distances, dim=1)
+        if mode == "rec_noise":
+            encoding_indices = (encoding_indices + torch.randint_like(encoding_indices, 0, self.n_codes)) % self.n_codes
+
         encode_onehot = F.one_hot(encoding_indices, self.n_codes).type_as(flat_inputs)
         encoding_indices = encoding_indices.view(z.shape[0], *z.shape[2:])
 
