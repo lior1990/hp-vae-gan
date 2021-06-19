@@ -74,6 +74,7 @@ def train(opt, netG):
         print(f"residual_loss_weight: {residual_loss_weight}")
 
     parameter_list = []
+    no_grads_parameter_list = []
     # Generator Adversary
 
     if not opt.train_all:
@@ -88,6 +89,9 @@ def train(opt, netG):
                     }
                 )
                 print(f"Learning rate for block {idx} at scale {opt.scale_idx} is {lr}")
+
+            no_grads_parameter_list.extend([netG.vqvae_encode, netG.vector_quantization, netG.decoder, netG.body[:-train_depth]])
+
         else:
             # VQVAE
             parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
@@ -111,6 +115,10 @@ def train(opt, netG):
                 for idx, block in enumerate(netG.body[-opt.train_depth:])]
 
     optimizerG = optim.Adam(parameter_list, lr=opt.lr_g, betas=(opt.beta1, 0.999))
+
+    for module in no_grads_parameter_list:
+        for param in module.parameters():
+            param.requires_grad = False
 
     # Parallel
     is_parallel = torch.cuda.device_count() > 1 and dynamic_batch_size > 1
