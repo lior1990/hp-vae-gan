@@ -234,11 +234,11 @@ class WDiscriminator2D(nn.Module):
 
         self.opt = opt
         N = int(opt.nfc)
-        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn="spectral", act='lrelu',
+        self.head = ConvBlock2DSN(opt.nc_im, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=opt.d_normalization_method, act='lrelu',
                                   padding_mode=opt.padding_mode)
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
-            block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn="spectral", act='lrelu', padding_mode=opt.padding_mode)
+            block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=opt.d_normalization_method, act='lrelu', padding_mode=opt.padding_mode)
             self.body.add_module('block%d' % (i), block)
         self.tail = nn.Conv2d(N, 1, kernel_size=opt.ker_size, padding=1, stride=1, padding_mode=opt.padding_mode)
 
@@ -295,11 +295,11 @@ class GeneratorHPVAEGAN(nn.Module):
         def create_spade_seq():
             _stage = SPADESequential()
 
-            _stage.add_module('head', SPADEResnetBlock(self.opt.n_embeddings, self.opt.nc_im, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
+            _stage.add_module('head', SPADEResnetBlock(self.opt.n_embeddings, self.opt.nc_im, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=self.opt.spade_use_spectral))
             for i in range(self.opt.num_layer):
-                block = SPADEResnetBlock(self.opt.n_embeddings, self.N, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True)
+                block = SPADEResnetBlock(self.opt.n_embeddings, self.N, self.N, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=self.opt.spade_use_spectral)
                 _stage.add_module('block%d' % (i), block)
-            _stage.add_module('tail', SPADEResnetBlock(self.opt.n_embeddings, self.N, self.opt.nc_im, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=True))
+            _stage.add_module('tail', SPADEResnetBlock(self.opt.n_embeddings, self.N, self.opt.nc_im, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=self.opt.spade_use_spectral))
             return _stage
 
         self.body.append(create_spade_seq())

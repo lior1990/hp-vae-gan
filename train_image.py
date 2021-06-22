@@ -439,6 +439,8 @@ if __name__ == '__main__':
     parser.add_argument('--encoder-normalization-method', type=str, default="spectral", help='encoder normalization method')
     parser.add_argument('--decoder-normalization-method', type=str, default="batch", help='decoder normalization method')
     parser.add_argument('--g-normalization-method', type=str, default="batch", help='generator normalization method')
+    parser.add_argument('--d-normalization-method', type=str, default="spectral", help='discriminator normalization method')
+    parser.add_argument('--spade-use-spectral', action='store_true', default=False)
     parser.add_argument('--generator', type=str, default='GeneratorHPVAEGAN', help='generator model')
     parser.add_argument('--discriminator', type=str, default='WDiscriminator2D', help='discriminator model')
 
