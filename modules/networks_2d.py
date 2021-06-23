@@ -292,6 +292,21 @@ class GeneratorHPVAEGAN(nn.Module):
         self.body = torch.nn.ModuleList([])
 
     def init_next_stage(self):
+        def create_regular_block():
+            _stage = nn.Sequential()
+            _stage.add_module('head',
+                                    ConvBlock2D(self.opt.nc_im, self.N, self.opt.ker_size, self.opt.padd_size,
+                                                stride=1, padding_mode=self.opt.padding_mode,
+                                                bn=self.opt.g_normalization_method))
+            for i in range(self.num_layer):
+                block = ConvBlock2D(self.N, self.N, self.opt.ker_size, self.opt.padd_size, stride=1,
+                                    padding_mode=self.opt.padding_mode, bn=self.opt.g_normalization_method)
+                _stage.add_module('block%d' % (i), block)
+            _stage.add_module('tail',
+                                    nn.Conv2d(self.N, self.opt.nc_im, self.opt.ker_size, 1, self.opt.ker_size // 2,
+                                              padding_mode=self.opt.padding_mode))
+            return _stage
+
         def create_spade_seq():
             _stage = SPADESequential()
 
@@ -302,7 +317,10 @@ class GeneratorHPVAEGAN(nn.Module):
             _stage.add_module('tail', SPADEResnetBlock(self.opt.n_embeddings, self.N, self.opt.nc_im, self.opt.ker_size, self.opt.g_normalization_method, use_spectral_norm=self.opt.spade_use_spectral))
             return _stage
 
-        self.body.append(create_spade_seq())
+        if self.opt.scale_idx in self.opt.spade_scales:
+            self.body.append(create_spade_seq())
+        else:
+            self.body.append(create_regular_block())
 
     def forward(self, img, noise_amp, mode='rand', reference_img=None):
         img_to_encode = img if reference_img is None else reference_img
@@ -370,17 +388,22 @@ class GeneratorHPVAEGAN(nn.Module):
         input_label = torch.zeros(bs, nc, h, w, device=self.opt.device)
         input_label.scatter_(1, spade_img.unsqueeze(dim=1), 1.0)
 
-        for idx, block in enumerate(self.body[start_idx:], start_idx):
+        for idx, block in enumerate(self.body, 1):
             # Upscale
-            x_prev_out_up = utils.upscale_2d(x_prev_out, idx + 1, self.opt)
+            x_prev_out_up = utils.upscale_2d(x_prev_out, idx, self.opt)
 
             # Add noise if "random" sampling, else, add no noise is "reconstruction" mode
             if mode == "rec_noise":
                 noise = utils.generate_noise(ref=x_prev_out_up)
-                x_prev = block((x_prev_out_up + noise * noise_amp[idx + 1], input_label))
+                if idx in self.opt.spade_scales:
+                    x_prev = block((x_prev_out_up + noise * noise_amp[idx], input_label))
+                else:
+                    x_prev = block(x_prev_out_up + noise * noise_amp[idx])
             else:
-                x_prev = block((x_prev_out_up, input_label))
-
+                if idx in self.opt.spade_scales:
+                    x_prev = block((x_prev_out_up, input_label))
+                else:
+                    x_prev = block(x_prev_out_up)
             x_prev_out = torch.tanh(x_prev + x_prev_out_up)
 
             last_residual_tuple = (x_prev, x_prev_out_up)

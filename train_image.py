@@ -38,6 +38,9 @@ def train(opt, netG):
     use_top_k = opt.top_k > 0 and opt.top_k < dynamic_batch_size
     print(f"Use top k feature: {use_top_k}")
 
+    if opt.scale_idx > 0:
+        print(f"Spade scale: {opt.scale_idx in opt.spade_scales}")
+
     is_training_gan = opt.scale_idx in gan_levels
     if is_training_gan:
         print(f"GAN training at scale {opt.scale_idx}")
@@ -478,6 +481,7 @@ if __name__ == '__main__':
     parser.add_argument('--indices-cycle-loss', action='store_true', default=False)
     parser.add_argument('--sr-start-scale', type=int, default=6)
     parser.add_argument('--n-times-cutmix', type=int, default=3)
+    parser.add_argument('--spade-scales', type=str, default="6")
 
     # Dataset
     parser.add_argument('--image-path', required=True, help="image path")
@@ -587,6 +591,11 @@ if __name__ == '__main__':
         vae_levels = eval(opt.vae_levels)
     else:
         vae_levels = list(range(int(opt.vae_levels)))
+
+    if "," in opt.spade_scales:
+        opt.spade_scales = eval(opt.spade_scales)
+    else:
+        opt.spade_scales = list(range(int(opt.spade_scales)))
 
     gan_levels = sorted(set(range(opt.stop_scale+1)) - set(vae_levels))
     print(f"vae levels: {vae_levels}, gan levels: {gan_levels}")
