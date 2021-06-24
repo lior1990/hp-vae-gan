@@ -269,6 +269,10 @@ def train(opt, netG):
                 indices_cycle_loss = opt.rec_loss(fake_z_e.detach(), fake_zero_scale_z_e)
                 errG_total += indices_cycle_loss
 
+            if opt.ref_rec_loss:
+                rec_loss_for_ref = opt.rec_loss(fake, ref_real.to(opt.device))
+                errG_total += rec_loss_for_ref
+
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
 
@@ -303,6 +307,8 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
+                if opt.ref_rec_loss:
+                    opt.summary.add_scalar('Video/Scale {}/Ref rec loss'.format(opt.scale_idx), rec_loss_for_ref.item(), iteration)
                 if opt.residual_loss_start_scale <= opt.scale_idx:
                     opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx),
                                            residual_blocks_diff_loss.item(), iteration)
@@ -511,6 +517,7 @@ if __name__ == '__main__':
     parser.add_argument('--old-vqvae', action='store_true', default=False)
     parser.add_argument('--cutmix', action='store_true', default=False)
     parser.add_argument('--top-k', type=int, default=0, help="choose top-k results from the batch")
+    parser.add_argument('--ref-rec-loss', action='store_true', default=False)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -518,6 +525,7 @@ if __name__ == '__main__':
     assert opt.disc_loss_weight > 0
     assert opt.residual_loss_start_scale > 0
     assert opt.ref_image_path or opt.fake_mode == "rec_noise"
+    assert not opt.ref_rec_loss or (opt.ref_rec_loss and opt.ref_image_path)
 
     if "," in opt.reduce_batch_interval:
         reduce_batch_interval = eval(opt.reduce_batch_interval)
