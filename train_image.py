@@ -271,7 +271,7 @@ def train(opt, netG):
 
             if opt.ref_rec_loss:
                 rec_loss_for_ref = opt.rec_loss(fake, ref_real.to(opt.device))
-                errG_total += rec_loss_for_ref
+                errG_total += opt.rec_weight * rec_loss_for_ref
 
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
