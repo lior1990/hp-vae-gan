@@ -34,7 +34,23 @@ green = colorama.Fore.GREEN + colorama.Style.BRIGHT
 magenta = colorama.Fore.MAGENTA + colorama.Style.BRIGHT
 
 
+import torchvision
+
+VGG = None
+
+
 def train(opt, netG):
+    global VGG
+
+    if VGG is None and opt.ref_perceptual_loss:
+        print("Enabling VGG")
+        VGG = torchvision.models.vgg19(pretrained=True).features[:23]
+
+        for param in VGG.parameters():
+            param.requires_grad = False
+
+    l1_loss = torch.nn.L1Loss()
+
     use_top_k = opt.top_k > 0 and opt.top_k < dynamic_batch_size
     print(f"Use top k feature: {use_top_k}")
 
@@ -273,6 +289,12 @@ def train(opt, netG):
                 rec_loss_for_ref = opt.rec_loss(fake, ref_real.to(opt.device))
                 errG_total += opt.rec_weight * rec_loss_for_ref
 
+            if opt.ref_perceptual_loss:
+                ref_real_features = VGG(ref_real.to(opt.device))
+                real_zero_features = VGG(fake)
+                ref_perceptual_loss = l1_loss(ref_real_features, real_zero_features) * opt.ref_perceptual_loss
+                errG_total += ref_perceptual_loss
+
             rec_loss = opt.rec_loss(generated, real)  # todo: remove this in G? add perceptual loss?
             errG_total += opt.rec_weight * rec_loss
 
@@ -309,6 +331,8 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
                 if opt.ref_rec_loss:
                     opt.summary.add_scalar('Video/Scale {}/Ref rec loss'.format(opt.scale_idx), rec_loss_for_ref.item(), iteration)
+                if opt.ref_perceptual_loss:
+                    opt.summary.add_scalar('Video/Scale {}/Ref perceptual loss'.format(opt.scale_idx), ref_perceptual_loss.item(), iteration)
                 if opt.residual_loss_start_scale <= opt.scale_idx:
                     opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx),
                                            residual_blocks_diff_loss.item(), iteration)
@@ -518,6 +542,7 @@ if __name__ == '__main__':
     parser.add_argument('--cutmix', action='store_true', default=False)
     parser.add_argument('--top-k', type=int, default=0, help="choose top-k results from the batch")
     parser.add_argument('--ref-rec-loss', action='store_true', default=False)
+    parser.add_argument('--ref-perceptual-loss', type=int, default=0)
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -526,6 +551,7 @@ if __name__ == '__main__':
     assert opt.residual_loss_start_scale > 0
     assert opt.ref_image_path or opt.fake_mode == "rec_noise"
     assert not opt.ref_rec_loss or (opt.ref_rec_loss and opt.ref_image_path)
+    assert not opt.ref_perceptual_loss or (opt.ref_perceptual_loss and opt.ref_image_path)
 
     if "," in opt.reduce_batch_interval:
         reduce_batch_interval = eval(opt.reduce_batch_interval)
