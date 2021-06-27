@@ -49,6 +49,8 @@ def train(opt, netG):
         for param in VGG.parameters():
             param.requires_grad = False
 
+        VGG.to(opt.device)
+
     l1_loss = torch.nn.L1Loss()
 
     use_top_k = opt.top_k > 0 and opt.top_k < dynamic_batch_size
