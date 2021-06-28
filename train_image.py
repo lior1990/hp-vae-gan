@@ -42,7 +42,9 @@ VGG = None
 def train(opt, netG):
     global VGG
 
-    if VGG is None and opt.ref_perceptual_loss:
+    use_ref_perceptual_loss = opt.ref_perceptual_loss and opt.scale_idx in ref_perceptual_loss_scales
+
+    if VGG is None and use_ref_perceptual_loss:
         print("Enabling VGG")
         VGG = torchvision.models.vgg19(pretrained=True).features[:23]
 
@@ -50,6 +52,11 @@ def train(opt, netG):
             param.requires_grad = False
 
         VGG.to(opt.device)
+    elif not use_ref_perceptual_loss and VGG is not None:
+        print(f"clear VGG")
+        del VGG
+
+    print(f"Use perceptual loss: {use_ref_perceptual_loss}")
 
     l1_loss = torch.nn.L1Loss()
 
@@ -291,7 +298,7 @@ def train(opt, netG):
                 rec_loss_for_ref = opt.rec_loss(fake, ref_real.to(opt.device))
                 errG_total += opt.rec_weight * rec_loss_for_ref
 
-            if opt.ref_perceptual_loss:
+            if use_ref_perceptual_loss:
                 ref_real_features = VGG(ref_real.to(opt.device))
                 real_zero_features = VGG(fake)
                 ref_perceptual_loss = l1_loss(ref_real_features, real_zero_features) * opt.ref_perceptual_loss
@@ -333,7 +340,7 @@ def train(opt, netG):
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
                 if opt.ref_rec_loss:
                     opt.summary.add_scalar('Video/Scale {}/Ref rec loss'.format(opt.scale_idx), rec_loss_for_ref.item(), iteration)
-                if opt.ref_perceptual_loss:
+                if use_ref_perceptual_loss:
                     opt.summary.add_scalar('Video/Scale {}/Ref perceptual loss'.format(opt.scale_idx), ref_perceptual_loss.item(), iteration)
                 if opt.residual_loss_start_scale <= opt.scale_idx:
                     opt.summary.add_scalar('Video/Scale {}/Residual diff loss'.format(opt.scale_idx),
@@ -545,6 +552,7 @@ if __name__ == '__main__':
     parser.add_argument('--top-k', type=int, default=0, help="choose top-k results from the batch")
     parser.add_argument('--ref-rec-loss', action='store_true', default=False)
     parser.add_argument('--ref-perceptual-loss', type=int, default=0)
+    parser.add_argument('--ref-perceptual-loss-scales', type=str, default="20")
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -559,6 +567,11 @@ if __name__ == '__main__':
         reduce_batch_interval = eval(opt.reduce_batch_interval)
     else:
         reduce_batch_interval = int(opt.reduce_batch_interval)
+
+    if "," in opt.ref_perceptual_loss_scales:
+        ref_perceptual_loss_scales = eval(opt.reduce_batch_interval)
+    else:
+        ref_perceptual_loss_scales = list(range(int(opt.ref_perceptual_loss_scales)))
 
     if opt.data_rep < opt.batch_size:
         opt.data_rep = opt.batch_size
