@@ -569,7 +569,7 @@ if __name__ == '__main__':
         reduce_batch_interval = int(opt.reduce_batch_interval)
 
     if "," in opt.ref_perceptual_loss_scales:
-        ref_perceptual_loss_scales = eval(opt.reduce_batch_interval)
+        ref_perceptual_loss_scales = eval(opt.ref_perceptual_loss_scales)
     else:
         ref_perceptual_loss_scales = list(range(int(opt.ref_perceptual_loss_scales)))
 
