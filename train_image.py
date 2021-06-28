@@ -54,7 +54,8 @@ def train(opt, netG):
         VGG.to(opt.device)
     elif not use_ref_perceptual_loss and VGG is not None:
         print(f"clear VGG")
-        del VGG
+        VGG.to("cpu")
+        VGG = None
 
     print(f"Use perceptual loss: {use_ref_perceptual_loss}")
 
