@@ -7,6 +7,7 @@ import utils
 from modules.spade_block import SPADEResnetBlock
 from vqvae.new_quantizer import Codebook
 from vqvae.quantizer import VectorQuantizer
+from vqvae.vqvae2 import VQVAE2
 
 
 def conv_weights_init_ones(m):
@@ -275,7 +276,17 @@ class GeneratorHPVAEGAN(nn.Module):
 
         vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
         self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
-        vqvae_class = VectorQuantizer if opt.old_vqvae else Codebook
+
+        if opt.vqvae_version == "new":
+            vqvae_class = Codebook
+        elif opt.vqvae_version == "old":
+            vqvae_class = VectorQuantizer
+        elif opt.vqvae_version == "vqvae2":
+            vqvae_class = VQVAE2
+            assert opt.fake_mode == "rec", "Other modes are not supported yet"
+        else:
+            raise NotImplementedError
+
         self.vector_quantization = vqvae_class(opt.n_embeddings, vqvae_embedding_dim)
         self.decoder = nn.Sequential()
 
@@ -324,13 +335,13 @@ class GeneratorHPVAEGAN(nn.Module):
 
     def forward(self, img, noise_amp, mode='rand', reference_img=None):
         img_to_encode = img if reference_img is None else reference_img
-        z_e = self.encode(img_to_encode)
-        embedding_loss, z_q, _, _, encoding_indices = self.vector_quantization(z_e, mode)
-        vqvae_out = torch.tanh(self.decoder(z_q))
+        # z_e = self.encode(img_to_encode)
+        vqvae_out, embedding_loss, encoding_indices = self.vector_quantization(img, mode)
+        # vqvae_out = torch.tanh(self.decoder(z_q))
 
         x_prev_out, last_residual_tuple = self.refinement_layers(0, vqvae_out, noise_amp, mode, encoding_indices)
 
-        return x_prev_out, embedding_loss, encoding_indices, last_residual_tuple, z_e
+        return x_prev_out, embedding_loss, encoding_indices, last_residual_tuple, None
 
     def forward_w_interpolation(self, img_all_scales, interpolation_indices):
         if interpolation_indices is None:

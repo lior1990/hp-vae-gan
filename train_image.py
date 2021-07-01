@@ -548,7 +548,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_dataset', type=str, default="data/imgs/misc")
     parser.add_argument('--skip-eval', action='store_true', default=False)
     parser.add_argument('--reduce-batch-interval', type=str, default="15")
-    parser.add_argument('--old-vqvae', action='store_true', default=False)
+    parser.add_argument('--vqvae-version', type=str, default="vqvae2")
     parser.add_argument('--cutmix', action='store_true', default=False)
     parser.add_argument('--top-k', type=int, default=0, help="choose top-k results from the batch")
     parser.add_argument('--ref-rec-loss', action='store_true', default=False)
