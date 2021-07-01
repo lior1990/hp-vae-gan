@@ -119,14 +119,14 @@ def train(opt, netG):
                 )
                 print(f"Learning rate for block {idx} at scale {opt.scale_idx} is {lr}")
 
-            no_grads_parameter_list.extend([netG.vqvae_encode, netG.vector_quantization, netG.decoder, netG.body[:-train_depth]])
+            print(f"learning: {len(netG.body[-train_depth:])} "
+                  f"disabling: {len(netG.body[:-train_depth])} "
+                  f"total: {len(netG.body)}")
+            no_grads_parameter_list.extend([netG.vector_quantization, netG.body[:-train_depth]])
 
         else:
             # VQVAE
-            parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.vector_quantization.parameters(),
-                                "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},
-                               {"params": netG.decoder.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
+            parameter_list += [{"params": netG.vector_quantization.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)}]
     else:
         if len(netG.body) < opt.train_depth:
             parameter_list += [{"params": netG.vqvae_encode.parameters(), "lr": opt.lr_g * (opt.lr_scale ** opt.scale_idx)},

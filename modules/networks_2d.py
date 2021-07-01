@@ -274,8 +274,8 @@ class GeneratorHPVAEGAN(nn.Module):
         self.N = N
         self.num_layer = opt.num_layer
 
-        vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
-        self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
+        # vqvae_embedding_dim = opt.embedding_dim + 2*opt.positional_encoding_weight  # 2 for positional encoding
+        # self.vqvae_encode = Encode2DVQVAE(opt, out_dim=opt.embedding_dim, num_blocks=opt.enc_blocks)
 
         if opt.vqvae_version == "new":
             vqvae_class = Codebook
@@ -287,18 +287,18 @@ class GeneratorHPVAEGAN(nn.Module):
         else:
             raise NotImplementedError
 
-        self.vector_quantization = vqvae_class(opt.n_embeddings, vqvae_embedding_dim)
-        self.decoder = nn.Sequential()
-
-        # Normal Decoder
-        self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
-        for i in range(opt.enc_blocks-1):
-            if opt.pooling:
-                block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, bn=opt.decoder_normalization_method)
-            else:
-                block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method)
-            self.decoder.add_module('block%d' % (i), block)
-        self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2, padding_mode=self.opt.padding_mode))
+        self.vector_quantization = vqvae_class(opt.n_embeddings, opt.embedding_dim)
+        # self.decoder = nn.Sequential()
+        #
+        # # Normal Decoder
+        # self.decoder.add_module('head', ConvBlock2D(vqvae_embedding_dim, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method))
+        # for i in range(opt.enc_blocks-1):
+        #     if opt.pooling:
+        #         block = UpsampleConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, bn=opt.decoder_normalization_method)
+        #     else:
+        #         block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode, bn=opt.decoder_normalization_method)
+        #     self.decoder.add_module('block%d' % (i), block)
+        # self.decoder.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2, padding_mode=self.opt.padding_mode))
 
         self.body = torch.nn.ModuleList([])
 
