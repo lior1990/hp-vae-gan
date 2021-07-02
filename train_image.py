@@ -357,9 +357,9 @@ def train(opt, netG):
                     fake_var = []
 
                     G_curr.eval()
-                    for _ in range(3):
-                        fake, _, ref_encoding_indices, _, _ = G_curr(real_zero, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
-                        fake_var.append(fake)
+                    for _ in range(2):
+                        current_fake, _, ref_encoding_indices, _, _ = G_curr(real_zero, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
+                        fake_var.append(current_fake)
                     fake_var = torch.cat(fake_var, dim=0)
                     G_curr.train()
 

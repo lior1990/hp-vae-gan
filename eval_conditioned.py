@@ -80,6 +80,9 @@ def parse_opt():
     parser.add_argument('--vqvae_beta', type=float, default=.25)
     parser.add_argument('--positional_encoding_weight', type=int, default=1)
     parser.add_argument('--pooling', action='store_true', default=False, help='pooling in encoder&decoder')
+    parser.add_argument('--vqvae-version', type=str, default="vqvae2")
+    parser.add_argument('--fake-mode', type=str, default="rec", help='fake mode (rec/rec_noise)')
+    parser.add_argument('--spade-scales', type=str, default="6")
 
     parser.set_defaults(hflip=False)
     opt = parser.parse_args()
@@ -88,7 +91,7 @@ def parse_opt():
 
 keys = ["nfc", "embedding_dim", "n_embeddings", "vae_levels", "enc_blocks", "positional_encoding_weight", "min_size",
         "num_layer", "encoder_normalization_method", "decoder_normalization_method", "g_normalization_method",
-        "padding_mode", "interpolation_method", "fixed_scales"]
+        "padding_mode", "interpolation_method", "fixed_scales", "vqvae_version", "fake_mode", "spade_scales"]
 results = {}
 
 
@@ -102,7 +105,12 @@ def load_params(net_g_path):
                 idx = line.index(search_key)
                 val = line.strip()[idx+len(search_key):]
                 try:
-                    results[key] = int(val)
+                    if val == "False":
+                        results[key] = False
+                    elif "," in val or val == '[]':
+                        results[key] = list(eval(val))
+                    else:
+                        results[key] = int(val)
                 except ValueError:
                     results[key] = val
                 break
@@ -150,7 +158,7 @@ def init(opt):
         raise NotImplementedError
 
     opt.n_images = dataset.num_of_images
-    initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size)
+    initial_size = utils.get_scales_by_index(0, opt.scale_factor, opt.stop_scale, opt.img_size, opt.fixed_scales)
     initial_size = [int(initial_size * opt.ar), initial_size]
     opt.Z_init_size = [opt.batch_size, opt.latent_dim, *initial_size]
     noise_init = utils.generate_noise(size=opt.Z_init_size, device=opt.device)
