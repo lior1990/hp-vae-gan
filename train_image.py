@@ -452,6 +452,8 @@ def eval_netG(image_path, save_dir, opt, netG):
             plt.close(fig)
             plt.imsave(os.path.join(reals_folder, f"real_{idx}.png"), real_tensor_to_plot)
             plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
+            opt.summary.visualize_image(opt, opt.scale_idx, rec_output, f'Eval-gen{idx}')
+            opt.summary.visualize_image(opt, opt.scale_idx, real, f'Eval-real{idx}')
 
     netG.train()
 
