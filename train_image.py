@@ -411,8 +411,10 @@ def eval_netG(image_path, save_dir, opt, netG):
 
     fakes_folder = os.path.join(save_dir, "fakes")
     reals_folder = os.path.join(save_dir, "reals")
+    indices_folder = os.path.join(save_dir, "indices")
     os.makedirs(fakes_folder, exist_ok=True)
     os.makedirs(reals_folder, exist_ok=True)
+    os.makedirs(indices_folder, exist_ok=True)
 
     netG.eval()
     with torch.no_grad():
@@ -442,7 +444,7 @@ def eval_netG(image_path, save_dir, opt, netG):
 
             real_zero = real_zero.to(opt.device)
             real = real.to(opt.device)
-            rec_output = netG(real_zero, opt.Noise_Amps, mode="rec")[0]
+            rec_output, _, encoding_indices, _, _ = netG(real_zero, opt.Noise_Amps, mode="rec")
 
             real_tensor_to_plot = tensor_to_plot(real)
             rec_tensor_to_plot = tensor_to_plot(rec_output)
@@ -452,6 +454,7 @@ def eval_netG(image_path, save_dir, opt, netG):
             plt.close(fig)
             plt.imsave(os.path.join(reals_folder, f"real_{idx}.png"), real_tensor_to_plot)
             plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
+            plt.imsave(os.path.join(indices_folder, f"{idx}.png"), encoding_indices.squeeze().cpu().numpy())
 
     netG.train()
 
