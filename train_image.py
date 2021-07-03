@@ -454,7 +454,10 @@ def eval_netG(image_path, save_dir, opt, netG):
             plt.close(fig)
             plt.imsave(os.path.join(reals_folder, f"real_{idx}.png"), real_tensor_to_plot)
             plt.imsave(os.path.join(fakes_folder, f"reconstruction_{idx}.png"), rec_tensor_to_plot)
-            plt.imsave(os.path.join(indices_folder, f"{idx}.png"), encoding_indices.squeeze().cpu().numpy())
+            fig, ax = plt.subplots(1, 1, figsize=(20, 5))
+            ax.imshow(encoding_indices.squeeze().cpu().numpy())
+            fig.savefig(os.path.join(indices_folder, f"{idx}.png"))
+            plt.close(fig)
 
     netG.train()
 
