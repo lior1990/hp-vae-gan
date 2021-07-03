@@ -336,7 +336,7 @@ class GeneratorHPVAEGAN(nn.Module):
     def forward(self, img, noise_amp, mode='rand', reference_img=None):
         img_to_encode = img if reference_img is None else reference_img
         # z_e = self.encode(img_to_encode)
-        vqvae_out, embedding_loss, encoding_indices = self.vector_quantization(img, mode)
+        vqvae_out, embedding_loss, encoding_indices = self.vector_quantization(img_to_encode, mode)
         # vqvae_out = torch.tanh(self.decoder(z_q))
 
         x_prev_out, last_residual_tuple = self.refinement_layers(0, vqvae_out, noise_amp, mode, encoding_indices)
