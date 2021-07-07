@@ -203,9 +203,9 @@ def train(opt, netG):
                 ref_real_zero = ref_real_zero.to(opt.device)
                 ref_real = ref_real.to(opt.device)
             else:
-                ref_real = ref_data
                 ref_real_zero = ref_data
                 ref_real_zero = ref_real_zero.to(opt.device)
+                ref_real = ref_real_zero
 
         if opt.cutmix:
             for _ in range(opt.n_times_cutmix):
