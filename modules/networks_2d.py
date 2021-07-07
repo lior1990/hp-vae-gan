@@ -240,13 +240,23 @@ class WDiscriminator2D(nn.Module):
         for i in range(opt.num_layer):
             block = ConvBlock2DSN(N, N, opt.ker_size, opt.ker_size // 2, stride=1, bn=opt.d_normalization_method, act='lrelu', padding_mode=opt.padding_mode)
             self.body.add_module('block%d' % (i), block)
+
+        self.aux_recon = nn.Sequential()
+
+        for i in range(opt.num_layer//2):
+            block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode,
+                                bn=opt.decoder_normalization_method)
+            self.aux_recon.add_module('block%d' % (i), block)
+        self.aux_recon.add_module('tail', nn.Conv2d(N, opt.nc_im, opt.ker_size, 1, opt.ker_size // 2, padding_mode=self.opt.padding_mode))
+
         self.tail = nn.Conv2d(N, 1, kernel_size=opt.ker_size, padding=1, stride=1, padding_mode=opt.padding_mode)
 
     def forward(self, x):
         head = self.head(x)
         body = self.body(head)
-        out = self.tail(body)
-        return out
+        disc_out = self.tail(body)
+        dec_out = self.aux_recon(body)
+        return disc_out, dec_out
 
 
 class UpsampleConvBlock2D(nn.Sequential):

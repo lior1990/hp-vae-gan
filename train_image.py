@@ -205,6 +205,7 @@ def train(opt, netG):
                 ref_real = ref_data
                 ref_real_zero = ref_data
                 ref_real_zero = ref_real_zero.to(opt.device)
+                ref_real = ref_real.to(opt.device)
 
         if opt.cutmix:
             for _ in range(opt.n_times_cutmix):
@@ -258,7 +259,7 @@ def train(opt, netG):
             # Train 3D Discriminator
             for _ in range(opt.d_steps):
                 D_curr.zero_grad()
-                real_discrimination_map = D_curr(real)
+                real_discrimination_map, _ = D_curr(real)
                 errD_real = -real_discrimination_map.mean()
 
                 # train with fake
@@ -266,11 +267,12 @@ def train(opt, netG):
                 fake, fake_embedding_loss, _, last_residual_tuple, fake_z_e = G_curr(real_zero, opt.Noise_Amps, mode=opt.fake_mode, reference_img=ref_real_zero)
 
                 # Train 3D Discriminator
-                output = D_curr(fake.detach())
+                output, d_rec = D_curr(fake.detach())
+                err_d_aux_loss = opt.rec_loss(ref_real, d_rec)
                 errD_fake = output.mean()
 
                 gradient_penalty = calc_gradient_penalty(D_curr, real, fake, opt.lambda_grad, opt.device)
-                errD_total = errD_real + errD_fake + gradient_penalty
+                errD_total = errD_real + errD_fake + gradient_penalty + err_d_aux_loss
                 errD_total.backward()
                 optimizerD.step()
 
@@ -309,11 +311,14 @@ def train(opt, netG):
             errG_total += opt.rec_weight * rec_loss
 
             # Train with 3D Discriminator
-            fake_discrimination_map = D_curr(fake)
+            fake_discrimination_map, fake_rec = D_curr(fake)
+
             if use_top_k:
                 fake_discrimination_map = torch.topk(fake_discrimination_map, opt.top_k, dim=0, sorted=False).values
             errG = -fake_discrimination_map.mean() * opt.disc_loss_weight
             errG_total += errG
+            errG_d_aux_loss = opt.rec_loss(ref_real, fake_rec)
+            errG_total += errG_d_aux_loss
 
             total_loss += errG_total
 
@@ -336,6 +341,8 @@ def train(opt, netG):
             else:
                 opt.summary.add_scalar('Video/Scale {}/rec loss'.format(opt.scale_idx), rec_loss.item(), iteration)
             if is_training_gan:
+                opt.summary.add_scalar('Video/Scale {}/errG_aux'.format(opt.scale_idx), errG_d_aux_loss.item(), iteration)
+                opt.summary.add_scalar('Video/Scale {}/errD_aux'.format(opt.scale_idx), err_d_aux_loss.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errG'.format(opt.scale_idx), errG.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_fake'.format(opt.scale_idx), errD_fake.item(), iteration)
                 opt.summary.add_scalar('Video/Scale {}/errD_real'.format(opt.scale_idx), errD_real.item(), iteration)
