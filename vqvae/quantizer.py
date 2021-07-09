@@ -20,6 +20,7 @@ class VectorQuantizer(nn.Module):
     def __init__(self, n_e, e_dim, beta=0.25):
         super(VectorQuantizer, self).__init__()
         self.n_e = n_e
+        self.n_codes = n_e
         self.e_dim = e_dim
         self.beta = beta
 
