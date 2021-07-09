@@ -378,6 +378,7 @@ def train(opt, netG):
                     opt.summary.visualize_image(opt, iteration, ref_encoding_indices, 'Ref Indices', dim=3)
                     opt.summary.visualize_image(opt, iteration, ref_real, 'Ref real')
                 if is_training_gan:
+                    opt.summary.visualize_image(opt, iteration, fake_rec, 'Fake D REC')
                     opt.summary.visualize_image(opt, iteration, fake, 'Fake')
                     opt.summary.visualize_image(opt, iteration, real_discrimination_map.squeeze(dim=1), 'Real D map', dim=3)
                     opt.summary.visualize_image(opt, iteration, fake_discrimination_map.squeeze(dim=1), 'Fake D map', dim=3)
@@ -499,6 +500,7 @@ if __name__ == '__main__':
     parser.add_argument('--spade-use-spectral', action='store_true', default=False)
     parser.add_argument('--generator', type=str, default='GeneratorHPVAEGAN', help='generator model')
     parser.add_argument('--discriminator', type=str, default='WDiscriminator2D', help='discriminator model')
+    parser.add_argument('--d-aux-num-layer', type=int, default=2)
 
     # pyramid parameters:
     parser.add_argument('--scale-factor', type=float, default=0.75, help='pyramid scale factor')

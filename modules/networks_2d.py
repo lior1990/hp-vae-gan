@@ -243,7 +243,7 @@ class WDiscriminator2D(nn.Module):
 
         self.aux_recon = nn.Sequential()
 
-        for i in range(opt.num_layer//2):
+        for i in range(opt.d_aux_num_layer):
             block = ConvBlock2D(N, N, opt.ker_size, opt.padd_size, stride=1, padding_mode=opt.padding_mode,
                                 bn=opt.decoder_normalization_method)
             self.aux_recon.add_module('block%d' % (i), block)
@@ -255,7 +255,7 @@ class WDiscriminator2D(nn.Module):
         head = self.head(x)
         body = self.body(head)
         disc_out = self.tail(body)
-        dec_out = self.aux_recon(body)
+        dec_out = torch.tanh(self.aux_recon(body))
         return disc_out, dec_out
 
 
